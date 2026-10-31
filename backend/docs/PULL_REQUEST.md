@@ -1,0 +1,17 @@
+# feat(accounts): implement authentication, administration and backend foundation
+
+The repository had no backend implementation. This adds a NestJS/MongoDB API for registration, secure cookie authentication, persistent sessions, account/profile/password management and administration. Unavailable booking/provider adapters return 503 rather than accepting fake data or treating failures as eligibility. Administrative changes persist audit records and pending notification events atomically.
+
+Implemented scope covers ACC-01, ACC-04, ACC-05, ACC-06, ACC-07a, ACC-08, ACC-09, ACC-10, ACC-11, ACC-12, ACC-13, ACC-14, ACC-15, ACC-16, ACC-17, ACC-18 and ACC-19; GEN-12/GEN-13 foundation and shared GEN-01/GEN-05/GEN-07 support. See DELIVERY.md for every requirement's COMPLETE/PARTIAL status. Email verification, email password-reset/SMTP and analytics are excluded.
+
+Main files/modules: src/auth, users, admin, audit, common, database, integrations, reference-data; scripts for protected admin/reference seeding; strict environment configuration, OpenAPI, CI and setup/integration docs. Reference data follows John's seven-airport spreadsheet, preserving source city identifiers and adding IANA time zones; USD/EGP are the supported starter currencies.
+
+API groups: `/api/auth` register/login/logout/refresh/me; `/api/users/me` profile/password/deactivation; `/api/admin` account listing, user/moderator state changes, temporary password resets, moderator creation, provider state changes and read-only booking oversight; public `/api/reference/*` and `/api/health`. API.md lists every method, path, permission and input.
+
+Security: bcrypt cost 12, normalized unique email index, five-failure/15-minute atomic lockout, 10-minute access JWTs, hashed rotating opaque refresh tokens, replay revocation, 30-minute persistent inactivity enforcement, authVersion-based invalidation, HttpOnly cookies, exact-Origin/custom-header CSRF checks, rate limiting, authoritative backend roles/provider ownership and forced temporary-password changes. Password changes revoke all sessions. Admin accounts are provisioned only by idempotent seed; APIs cannot promote admins.
+
+Validation: `npm run build` and `npm run lint` pass. `npm test`: 12 tests in 3 suites pass. `npm run test:e2e`: 41 tests pass against disposable real MongoDB 8.2.6 on Windows/Node 24.14.0, with test-only external adapters. Coverage includes concurrent failures/rotation, logout and absolute/idle expiration, reset enforcement, CSRF/rate limits, transaction rollback, safe projections, provider contracts and idempotent seeds. CI's Node 22/MongoDB 7.0.24 combination remains to be run by GitHub Actions.
+
+Pending integrations: Zeyad/Youssef supply actual booking eligibility and combined admin retrieval, with serialization against new confirmations. Yassin/Magdy supply actual provider verification/state updates and enforce availability in searches/new bookings. Content modules apply deactivated-user visibility; the notification owner supplies an idempotent outbox consumer. No notification delivery, provider availability behavior or real cross-module booking query is claimed as complete. Rate limiting requires shared storage before multi-process deployment.
+
+Delivery limitation: the remote initially has no branches, including `main`. The feature branch can be published, but opening this PR requires the repository owner to establish an approved base branch. No changes to `main` or branch-protection settings are included.
