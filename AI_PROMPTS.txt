@@ -1,0 +1,37 @@
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: PAY-01
+Prompt:
+How should Stripe test-mode PaymentIntents, webhook verification, and payment retries be structured in NestJS for flight and hotel bookings?
+How the output was used:
+Used the explanation of the AI to design the payment flow, webhook verification, and retry logic.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: PAY-03
+Prompt:
+How can provider cancellation tiers be implemented to calculate refunds for user-initiated vs provider-initiated cancellations in Stripe?
+How the output was used:
+Used the explanation of the AI to design and write the tiered refund calculation and refund execution code.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: GEN-01
+Prompt:
+How to design an in-app notification system in NestJS that tracks unread counts and delivers notifications from background and administrative outbox events?
+How the output was used:
+Used the explanation of the AI to design the in-app notification schema, unread count queries, and outbox delivery port.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: GEN-09
+Prompt:
+How to implement a reporting and content moderation workflow in MongoDB and NestJS ensuring users cannot report the same item multiple times?
+How the output was used:
+Used the explanation of the AI to design the compound unique index and administrative resolution endpoints.
+================================================
