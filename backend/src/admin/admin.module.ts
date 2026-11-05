@@ -1,6 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
-@Module({ imports: [AuditModule], controllers: [AdminController], providers: [AdminService] })
+import { ReportsModule } from '../reports/reports.module';
+
+@Module({
+  imports: [AuditModule, forwardRef(() => ReportsModule)],
+  controllers: [AdminController],
+  providers: [AdminService],
+})
 export class AdminModule {}

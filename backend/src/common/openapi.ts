@@ -131,7 +131,7 @@ export function addResponseContracts(document: OpenAPIObject) {
   document.components ??= {};
   document.components.schemas = { ...document.components.schemas, ...schemas };
   for (const [path, item] of Object.entries(document.paths))
-    for (const method of ['get', 'post', 'patch'] as const) {
+    for (const method of ['get', 'post', 'patch', 'delete'] as const) {
       const operation = item[method];
       if (!operation) continue;
       let result: SchemaObject | { $ref: string } = ref('Success');
@@ -182,7 +182,7 @@ export function addResponseContracts(document: OpenAPIObject) {
           }[code]!,
           content: { 'application/json': { schema: ref('Error') } },
         };
-      if (method !== 'get')
+      if (method !== 'get' && !path.endsWith('/payments/webhook'))
         operation.parameters = [
           ...(operation.parameters ?? []),
           {
@@ -197,7 +197,8 @@ export function addResponseContracts(document: OpenAPIObject) {
         path.includes('/reference/') ||
         path.endsWith('/health') ||
         path.endsWith('/register') ||
-        path.endsWith('/login')
+        path.endsWith('/login') ||
+        path.endsWith('/payments/webhook')
       )
         operation.security = [];
       if (path.endsWith('/refresh')) operation.security = [{ refresh_token: [] }];

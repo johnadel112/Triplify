@@ -12,13 +12,21 @@ import { CommonModule } from './common/common.module';
 import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
+import { PaymentsModule } from './payments/payments.module';
+
 @ApiTags('Health')
 @Controller('health')
 class HealthController {
-  @Public() @Get() @ApiOperation({ summary: 'Non-sensitive liveness check' }) health() {
+  @Public()
+  @Get()
+  @ApiOperation({ summary: 'Non-sensitive liveness check' })
+  health() {
     return { status: 'ok' };
   }
 }
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
@@ -36,6 +44,9 @@ class HealthController {
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
+    NotificationsModule,
+    ReportsModule,
+    PaymentsModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
@@ -45,6 +56,6 @@ class HealthController {
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AccountsModule],
+  exports: [AccountsModule, NotificationsModule, ReportsModule, PaymentsModule],
 })
 export class AppModule {}
