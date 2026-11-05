@@ -1,27 +1,40 @@
+import { Model } from 'mongoose';
+import { NotificationOutbox } from '../audit/audit.schema';
+import { Notification, NotificationType } from './notifications.schema';
 import { NotificationsService } from './notifications.service';
-import { NotificationType } from './notifications.schema';
 
 describe('Notifications Module (GEN-01)', () => {
   let service: NotificationsService;
-  let mockNotificationsModel: any;
-  let mockOutboxModel: any;
+  let mockNotificationsModel: jest.Mock & {
+    countDocuments: jest.Mock;
+    find: jest.Mock;
+    updateOne: jest.Mock;
+    updateMany: jest.Mock;
+  };
+  let mockOutboxModel: { updateOne: jest.Mock };
 
   beforeEach(() => {
-    mockNotificationsModel = jest.fn();
-    mockNotificationsModel.countDocuments = jest.fn();
-    mockNotificationsModel.find = jest.fn();
-    mockNotificationsModel.updateOne = jest.fn();
-    mockNotificationsModel.updateMany = jest.fn();
+    mockNotificationsModel = Object.assign(jest.fn(), {
+      countDocuments: jest.fn(),
+      find: jest.fn(),
+      updateOne: jest.fn(),
+      updateMany: jest.fn(),
+    });
 
     mockOutboxModel = {
       updateOne: jest.fn().mockResolvedValue({}),
     };
 
-    service = new NotificationsService(mockNotificationsModel, mockOutboxModel);
+    service = new NotificationsService(
+      mockNotificationsModel as unknown as Model<Notification>,
+      mockOutboxModel as unknown as Model<NotificationOutbox>,
+    );
   });
 
   it('delivers admin outbox events as in-app notifications and marks outbox DELIVERED', async () => {
-    const createSpy = jest.spyOn(service, 'createNotification').mockResolvedValue({} as any);
+    const createSpy = jest
+      .spyOn(service, 'createNotification')
+      .mockResolvedValue({} as Notification);
 
     await service.deliver({
       eventId: 'evt-123',
@@ -58,4 +71,3 @@ describe('Notifications Module (GEN-01)', () => {
     expect(result).toEqual({ success: true });
   });
 });
-

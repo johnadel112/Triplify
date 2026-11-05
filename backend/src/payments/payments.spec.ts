@@ -1,14 +1,20 @@
-import { RefundsService } from './refunds.service';
+import { ConfigService } from '@nestjs/config';
+import { Model } from 'mongoose';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PLATFORM_CURRENCY } from './payments.constants';
+import { Payment, Refund } from './payments.schema';
+import { RefundsService } from './refunds.service';
 
 describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
   let refundsService: RefundsService;
 
   beforeEach(() => {
-    const mockPaymentModel: any = {};
-    const mockRefundModel: any = {};
-    const mockConfigService: any = { get: jest.fn().mockReturnValue('sk_test_mock') };
-    const mockNotificationsService: any = { createNotification: jest.fn().mockResolvedValue({}) };
+    const mockPaymentModel = {} as Model<Payment>;
+    const mockRefundModel = {} as Model<Refund>;
+    const mockConfigService = { get: jest.fn().mockReturnValue('sk_test_mock') } as unknown as ConfigService;
+    const mockNotificationsService = {
+      createNotification: jest.fn().mockResolvedValue({}),
+    } as unknown as NotificationsService;
 
     refundsService = new RefundsService(
       mockPaymentModel,
@@ -57,4 +63,3 @@ describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
     });
   });
 });
-

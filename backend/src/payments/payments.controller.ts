@@ -1,10 +1,14 @@
 import { Body, Controller, Get, Headers, Param, Post, Req } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
+import Stripe from 'stripe';
 import { CurrentUser, Public, SkipCsrf } from '../auth/guards';
 import { Principal } from '../common/domain';
 import { ObjectIdPipe } from '../common/http';
 import { CreatePaymentDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
+
+type StripeWebhookRequest = Request & { rawBody?: Buffer };
 
 @ApiTags('Payments')
 @Controller('payments')
@@ -54,8 +58,8 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Stripe webhook endpoint for payment event verification' })
   @ApiResponse({ status: 200, description: 'Webhook event processed' })
   async handleWebhook(
-    @Req() req: any,
-    @Body() body: any,
+    @Req() req: StripeWebhookRequest,
+    @Body() body: Stripe.Event,
     @Headers('stripe-signature') signature?: string,
   ) {
     const rawBody = req.rawBody || body;

@@ -10,7 +10,7 @@ import { Model, Types } from 'mongoose';
 import Stripe from 'stripe';
 import { Payment, PolicyAcceptance } from './payments.schema';
 import { CreatePaymentDto } from './payments.dto';
-import { BookingType, PaymentStatus, PLATFORM_CURRENCY } from './payments.constants';
+import { PaymentStatus, PLATFORM_CURRENCY } from './payments.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notifications.schema';
 
@@ -28,9 +28,7 @@ export class PaymentsService {
     const stripeKey =
       this.configService.get<string>('STRIPE_SECRET_KEY') ||
       'sk_test_dummy_key_for_testing_and_evaluation';
-    this.stripe = new Stripe(stripeKey, {
-      apiVersion: '2025-02-24.acacia' as any,
-    });
+    this.stripe = new Stripe(stripeKey);
     this.webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
   }
 
@@ -154,18 +152,25 @@ export class PaymentsService {
     };
   }
 
-  async handleWebhook(rawBody: any, signature?: string) {
+  async handleWebhook(rawBody: string | Buffer | Stripe.Event, signature?: string) {
     let event: Stripe.Event;
 
     if (this.webhookSecret && signature) {
+      if (typeof rawBody !== 'string' && !Buffer.isBuffer(rawBody)) {
+        throw new BadRequestException('Webhook signature verification failed: raw body required');
+      }
       try {
         event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
-      } catch (err: any) {
-        throw new BadRequestException(`Webhook signature verification failed: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'invalid payload';
+        throw new BadRequestException(`Webhook signature verification failed: ${message}`);
       }
+    } else if (typeof rawBody === 'string') {
+      event = JSON.parse(rawBody) as Stripe.Event;
+    } else if (Buffer.isBuffer(rawBody)) {
+      event = JSON.parse(rawBody.toString('utf8')) as Stripe.Event;
     } else {
-      // In test mode or when parsed JSON body is passed
-      event = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
+      event = rawBody;
     }
 
     if (event.type === 'payment_intent.succeeded') {

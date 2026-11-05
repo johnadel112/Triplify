@@ -1,20 +1,30 @@
-import { ReportsService } from './reports.service';
-import { ReportStatus, ReportTargetType } from './reports.schema';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Model } from 'mongoose';
+import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { Report, ReportStatus, ReportTargetType } from './reports.schema';
+import { ReportsService } from './reports.service';
 
 describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
   let service: ReportsService;
-  let mockReportModel: any;
-  let mockAuditService: any;
-  let mockNotificationsService: any;
+  let mockReportModel: jest.Mock & {
+    findOne: jest.Mock;
+    findById: jest.Mock;
+    find: jest.Mock;
+    countDocuments: jest.Mock;
+    updateMany: jest.Mock;
+  };
+  let mockAuditService: { record: jest.Mock };
+  let mockNotificationsService: { createNotification: jest.Mock };
 
   beforeEach(() => {
-    mockReportModel = jest.fn();
-    mockReportModel.findOne = jest.fn();
-    mockReportModel.findById = jest.fn();
-    mockReportModel.find = jest.fn();
-    mockReportModel.countDocuments = jest.fn();
-    mockReportModel.updateMany = jest.fn();
+    mockReportModel = Object.assign(jest.fn(), {
+      findOne: jest.fn(),
+      findById: jest.fn(),
+      find: jest.fn(),
+      countDocuments: jest.fn(),
+      updateMany: jest.fn(),
+    });
 
     mockAuditService = {
       record: jest.fn().mockResolvedValue({}),
@@ -25,9 +35,9 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
     };
 
     service = new ReportsService(
-      mockReportModel,
-      mockAuditService,
-      mockNotificationsService,
+      mockReportModel as unknown as Model<Report>,
+      mockAuditService as unknown as AuditService,
+      mockNotificationsService as unknown as NotificationsService,
     );
   });
 
@@ -66,11 +76,10 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
       };
       mockReportModel.findById.mockResolvedValue(mockReport);
 
-      const result = await service.resolveReport(
-        '507f1f77bcf86cd799439000',
-        'report-1',
-        { action: 'DISMISS', notes: 'No violation found' },
-      );
+      const result = await service.resolveReport('507f1f77bcf86cd799439000', 'report-1', {
+        action: 'DISMISS',
+        notes: 'No violation found',
+      });
 
       expect(result.success).toBe(true);
       expect(result.status).toBe(ReportStatus.DISMISSED);
@@ -110,4 +119,3 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
     });
   });
 });
-

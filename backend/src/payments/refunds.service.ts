@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -32,9 +27,7 @@ export class RefundsService {
     const stripeKey =
       this.configService.get<string>('STRIPE_SECRET_KEY') ||
       'sk_test_dummy_key_for_testing_and_evaluation';
-    this.stripe = new Stripe(stripeKey, {
-      apiVersion: '2025-02-24.acacia' as any,
-    });
+    this.stripe = new Stripe(stripeKey);
   }
 
   calculateRefundPercentage(
