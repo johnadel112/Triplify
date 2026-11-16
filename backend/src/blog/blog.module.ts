@@ -3,7 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { BlogController } from './blog.controller';
 import { BlogService } from './blog.service';
 import { BlogComment, BlogCommentSchema, PostLike, PostLikeSchema } from './blog.schema';
-import { AuthModule } from '../auth/accounts.module';
+import { AccountsModule } from '../auth/accounts.module';
 
 @Module({
   imports: [
@@ -11,7 +11,7 @@ import { AuthModule } from '../auth/accounts.module';
       { name: BlogComment.name, schema: BlogCommentSchema },
       { name: PostLike.name, schema: PostLikeSchema },
     ]),
-    AuthModule,
+    AccountsModule,
   ],
   controllers: [BlogController],
   providers: [BlogService],

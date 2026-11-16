@@ -19,7 +19,7 @@ export function configureApp(app: INestApplication) {
     origin: config.getOrThrow<string>('FRONTEND_URL').split(','),
     credentials: true,
     allowedHeaders: ['Content-Type', 'X-Triplify-CSRF'],
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
   app.useGlobalPipes(validationPipe());
   app.useGlobalFilters(new ErrorFilter());

@@ -80,3 +80,58 @@ Write end-to-end tests on a real MongoDB replica set that prove concurrent hotel
 How the output was used:
 Reviewed and kept the generated tests in test/hotel-bookings.e2e-spec.ts; they are the evidence for the concurrency requirement.
 ================================================
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-01, ITN-03
+Prompt:
+How to design MongoDB schema and NestJS REST endpoints for creating, updating, deleting, and viewing itineraries with title validation (max 100 chars), countries, start date, and ownership checks?
+How the output was used:
+Used the proposed schema and service logic with ownership assertions in ItinerariesService and ItinerariesController.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-05, ITN-07, ITN-08, ITN-09
+Prompt:
+How should itinerary days be renumbered sequentially and have their calendar dates recalculated after adding, deleting, or reordering days, and how can consecutive days in the same city be grouped into stays?
+How the output was used:
+Implemented renumberAndRecalculateDays and groupConsecutiveDays helper functions in itineraries.schema.ts to maintain deterministic sequential dates and city stay groups.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-10, ITN-12, GEN-08
+Prompt:
+How to implement activity management and multipart image uploads in NestJS with multer, validating file size (max 5MB), image mime-types (JPEG, PNG, WebP), and enforcing a 5-image limit per activity?
+How the output was used:
+Implemented uploadActivityImages in ItinerariesService and configured diskStorage with mimetype and count guards in ActivitiesController.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-14, ITN-16, ITN-18
+Prompt:
+How should daily category budgets (food, accommodation, local transport, activities) and intercity transport costs be aggregated, and how to integrate FXRatesAPI to convert amounts into the user's preferred currency with graceful fallback handling?
+How the output was used:
+Built FxRatesService with 1-hour in-memory caching and fallback rate matrix, and implemented getBudgetSummary in ItinerariesService to compute category subtotals and overall converted totals.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-20, ITN-21
+Prompt:
+How can public itineraries be searched with text and duration filters, viewed by guests, and cloned by registered travelers into independent private copies while strictly preserving attribution?
+How the output was used:
+Implemented searchPublic with regex and array-size filters, and the clone endpoint in ItinerariesService with attribution metadata (clonedFrom) and independent ID regeneration.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-25, ITN-26
+Prompt:
+How can hotel search queries be generated from consecutive itinerary city groups and flight search parameters derived from itinerary start, return, and intercity dates?
+How the output was used:
+Implemented getHotelSearchParameters and getFlightSearchParameters in ItinerariesService to provide pre-populated search queries for the booking modules.
+================================================

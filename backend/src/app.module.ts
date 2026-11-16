@@ -16,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { PaymentsModule } from './payments/payments.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
+import { ItinerariesModule } from './itineraries/itineraries.module';
 
 @ApiTags('Health')
 @Controller('health')
@@ -49,6 +50,7 @@ class HealthController {
     ReportsModule,
     PaymentsModule,
     HotelBookingsModule,
+    ItinerariesModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
@@ -58,6 +60,6 @@ class HealthController {
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AccountsModule, NotificationsModule, ReportsModule, PaymentsModule],
+  exports: [AccountsModule, NotificationsModule, ReportsModule, PaymentsModule, ItinerariesModule],
 })
 export class AppModule {}

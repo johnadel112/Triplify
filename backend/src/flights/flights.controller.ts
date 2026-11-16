@@ -9,13 +9,13 @@ export class FlightsController {
   constructor(private readonly flightsService: FlightsService) {}
 
   @Patch('airline-profile')
-  @Roles(UserRole.MODERATOR)
+  @Roles(UserRole.AIRLINE_MODERATOR)
   async updateProfile(@CurrentUser() user: any, @Body() dto: any) {
     return this.flightsService.updateAirlineProfile(user.id, dto);
   }
 
   @Post()
-  @Roles(UserRole.MODERATOR)
+  @Roles(UserRole.AIRLINE_MODERATOR)
   async createFlight(@CurrentUser() user: any, @Body() dto: any) {
     return this.flightsService.createFlight(user.airlineId || user.id, dto);
   }
@@ -33,7 +33,7 @@ export class FlightsController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.MODERATOR)
+  @Roles(UserRole.AIRLINE_MODERATOR)
   async updateFlight(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: any) {
     return this.flightsService.updateFlight(id, user.airlineId || user.id, dto);
   }

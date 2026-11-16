@@ -1,10 +1,21 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, ClientSession } from 'mongoose';
 import { Flight, AirlineProfile } from './flights.schema';
 import { Airport } from '../reference-data/reference.schema';
-import { PROVIDER_MANAGEMENT, ProviderManagementPort, NOTIFICATION_DELIVERY, NotificationDeliveryPort } from '../integrations/contracts';
-import * as moment from 'moment-timezone';
+import {
+  PROVIDER_MANAGEMENT,
+  ProviderManagementPort,
+  NOTIFICATION_DELIVERY,
+  NotificationDeliveryPort,
+} from '../integrations/contracts';
+import moment from 'moment-timezone';
 
 @Injectable()
 export class FlightsService {
@@ -17,7 +28,9 @@ export class FlightsService {
 
   // FLT-01, GEN-06: Moderator-specific airline profile editing & notifications
   async updateAirlineProfile(userId: string, updateData: any, session?: ClientSession) {
-    let profile = await this.airlineModel.findOne({ moderatorId: new Types.ObjectId(userId) }).session(session || null);
+    let profile = await this.airlineModel
+      .findOne({ moderatorId: new Types.ObjectId(userId) })
+      .session(session || null);
     if (!profile) {
       profile = new this.airlineModel({ moderatorId: new Types.ObjectId(userId), ...updateData });
     } else {
@@ -39,7 +52,16 @@ export class FlightsService {
 
   // FLT-03, FLT-04, FLT-05, FLT-06: Flight Creation & Inventory Validation
   async createFlight(airlineId: string, dto: any) {
-    const { flightNumber, departureAirportCode, arrivalAirportCode, departureTimeLocal, arrivalTimeLocal, cabins, extraBaggagePricePerKg, cancellationTiers } = dto;
+    const {
+      flightNumber,
+      departureAirportCode,
+      arrivalAirportCode,
+      departureTimeLocal,
+      arrivalTimeLocal,
+      cabins,
+      extraBaggagePricePerKg,
+      cancellationTiers,
+    } = dto;
 
     const depAirport = await this.airportModel.findOne({ iataCode: departureAirportCode });
     const arrAirport = await this.airportModel.findOne({ iataCode: arrivalAirportCode });
@@ -60,14 +82,22 @@ export class FlightsService {
 
     const departureDateOnly = moment(departureUtc).format('YYYY-MM-DD');
 
-    const duplicate = await this.flightModel.findOne({ airlineId, flightNumber, departureDate: departureDateOnly });
+    const duplicate = await this.flightModel.findOne({
+      airlineId,
+      flightNumber,
+      departureDate: departureDateOnly,
+    });
     if (duplicate) {
-      throw new BadRequestException('An airline cannot have duplicate flight numbers on the same departure date.');
+      throw new BadRequestException(
+        'An airline cannot have duplicate flight numbers on the same departure date.',
+      );
     }
 
     for (const [cabinName, cabinData] of Object.entries(cabins) as [string, any][]) {
       if (!Number.isInteger(cabinData.seatCount) || cabinData.seatCount <= 0) {
-        throw new BadRequestException(`Cabin seat counts must be positive whole numbers (${cabinName}).`);
+        throw new BadRequestException(
+          `Cabin seat counts must be positive whole numbers (${cabinName}).`,
+        );
       }
     }
 
@@ -90,7 +120,16 @@ export class FlightsService {
 
   // FLT-09, FLT-11, FLT-12: Search, Filter, Sort (One-way & Round-trip)
   async searchFlights(queryDto: any) {
-    const { origin, destination, date, returnDate, cabinClass, passengers = 1, maxPrice, sortBy } = queryDto;
+    const {
+      origin,
+      destination,
+      date,
+      returnDate,
+      cabinClass,
+      passengers = 1,
+      maxPrice,
+      sortBy,
+    } = queryDto;
 
     const query: any = {
       departureAirport: origin,
@@ -107,7 +146,7 @@ export class FlightsService {
 
     const outbound = await dbQuery.exec();
 
-    let returnFlights = [];
+    let returnFlights: any[] = [];
     if (returnDate) {
       const returnQuery = {
         departureAirport: destination,
@@ -133,12 +172,14 @@ export class FlightsService {
     const flight = await this.flightModel.findById(flightId);
     if (!flight) throw new NotFoundException('Flight not found');
 
-    if (flight.airlineId.toString() !== airlineId) {
+    if (flight.airlineId?.toString() !== airlineId) {
       throw new ForbiddenException('You can only modify flights belonging to your airline.');
     }
 
     if ((updateDto.departureAirport || updateDto.arrivalAirport) && flight.hasConfirmedBookings) {
-      throw new BadRequestException('Airports cannot change after the flight has confirmed bookings.');
+      throw new BadRequestException(
+        'Airports cannot change after the flight has confirmed bookings.',
+      );
     }
 
     Object.assign(flight, updateDto);
