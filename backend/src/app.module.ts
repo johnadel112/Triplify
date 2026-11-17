@@ -4,30 +4,42 @@ import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+
 import { validateEnvironment } from './config/environment';
+
 import { DatabaseModule } from './database/database.module';
 import { IntegrationsModule } from './integrations/integrations.module';
-import { CsrfGuard, JwtAuthGuard, Public, RolesGuard } from './auth/guards';
+
+import {
+  CsrfGuard,
+  JwtAuthGuard,
+  Public,
+  RolesGuard,
+} from './auth/guards';
+
 import { CommonModule } from './common/common.module';
 import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
-feature/FLT-19-flight-booking
-import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 
+import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { PaymentsModule } from './payments/payments.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { ItinerariesModule } from './itineraries/itineraries.module';
 
- feature/john-auth-admin
+// Magdy's Hotels module
+import { HotelsModule } from './hotels/hotels.module';
+
 @ApiTags('Health')
 @Controller('health')
 class HealthController {
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Non-sensitive liveness check' })
+  @ApiOperation({
+    summary: 'Non-sensitive liveness check',
+  })
   health() {
     return { status: 'ok' };
   }
@@ -35,7 +47,11 @@ class HealthController {
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnvironment,
+    }),
+
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -44,30 +60,59 @@ class HealthController {
         serverSelectionTimeoutMS: 10000,
       }),
     }),
+
     DatabaseModule,
     CommonModule,
     IntegrationsModule,
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
- feature/FLT-19-flight-booking
-    FlightBookingsModule,
 
+    FlightBookingsModule,
     NotificationsModule,
     ReportsModule,
     PaymentsModule,
     HotelBookingsModule,
     ItinerariesModule,
- feature/john-auth-admin
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+
+    // Magdy's module
+    HotelsModule,
+
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 120,
+      },
+    ]),
   ],
+
   controllers: [HealthController],
+
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: CsrfGuard },
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: CsrfGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
-  exports: [AccountsModule, NotificationsModule, ReportsModule, PaymentsModule, ItinerariesModule],
+
+  exports: [
+    AccountsModule,
+    NotificationsModule,
+    ReportsModule,
+    PaymentsModule,
+    ItinerariesModule,
+  ],
 })
 export class AppModule {}
