@@ -12,6 +12,7 @@ import { CommonModule } from './common/common.module';
 import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
+import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 @ApiTags('Health')
 @Controller('health')
 class HealthController {
@@ -36,6 +37,7 @@ class HealthController {
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
+    FlightBookingsModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
