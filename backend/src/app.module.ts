@@ -28,9 +28,11 @@ import { ReportsModule } from './reports/reports.module';
 import { PaymentsModule } from './payments/payments.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { ItinerariesModule } from './itineraries/itineraries.module';
+import { BlogModule } from './blog/blog.module';
 
 // Magdy's Hotels module
 import { HotelsModule } from './hotels/hotels.module';
+
 
 @ApiTags('Health')
 @Controller('health')
@@ -68,12 +70,13 @@ class HealthController {
     AdminModule,
     ReferenceDataModule,
 
+
     FlightBookingsModule,
     NotificationsModule,
     ReportsModule,
     PaymentsModule,
     HotelBookingsModule,
-    ItinerariesModule,
+    ItinerariesModule
 
     // Magdy's module
     HotelsModule,
@@ -84,6 +87,10 @@ class HealthController {
         limit: 120,
       },
     ]),
+=======
+    BlogModule,
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
+
   ],
 
   controllers: [HealthController],
