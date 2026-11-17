@@ -12,14 +12,27 @@ import { CommonModule } from './common/common.module';
 import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
+feature/FLT-19-flight-booking
 import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
+
+import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
+import { PaymentsModule } from './payments/payments.module';
+import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
+import { ItinerariesModule } from './itineraries/itineraries.module';
+
+ feature/john-auth-admin
 @ApiTags('Health')
 @Controller('health')
 class HealthController {
-  @Public() @Get() @ApiOperation({ summary: 'Non-sensitive liveness check' }) health() {
+  @Public()
+  @Get()
+  @ApiOperation({ summary: 'Non-sensitive liveness check' })
+  health() {
     return { status: 'ok' };
   }
 }
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
@@ -37,7 +50,15 @@ class HealthController {
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
+ feature/FLT-19-flight-booking
     FlightBookingsModule,
+
+    NotificationsModule,
+    ReportsModule,
+    PaymentsModule,
+    HotelBookingsModule,
+    ItinerariesModule,
+ feature/john-auth-admin
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
@@ -47,6 +68,6 @@ class HealthController {
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AccountsModule],
+  exports: [AccountsModule, NotificationsModule, ReportsModule, PaymentsModule, ItinerariesModule],
 })
 export class AppModule {}

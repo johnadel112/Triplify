@@ -1,0 +1,137 @@
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: PAY-01
+Prompt:
+How should Stripe test-mode PaymentIntents, webhook verification, and payment retries be structured in NestJS for flight and hotel bookings?
+How the output was used:
+Used the explanation of the AI to design the payment flow, webhook verification, and retry logic.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: PAY-03
+Prompt:
+How can provider cancellation tiers be implemented to calculate refunds for user-initiated vs provider-initiated cancellations in Stripe?
+How the output was used:
+Used the explanation of the AI to design and write the tiered refund calculation and refund execution code.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: GEN-01
+Prompt:
+How to design an in-app notification system in NestJS that tracks unread counts and delivers notifications from background and administrative outbox events?
+How the output was used:
+Used the explanation of the AI to design the in-app notification schema, unread count queries, and outbox delivery port.
+================================================
+Date: 2026-11-03
+Student: Divan Kamel
+Tool: Gemini
+Related Requirement: GEN-09
+Prompt:
+How to implement a reporting and content moderation workflow in MongoDB and NestJS ensuring users cannot report the same item multiple times?
+How the output was used:
+Used the explanation of the AI to design the compound unique index and administrative resolution endpoints.
+================================================
+Date: 2026-11-15
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: HTL-16, HTL-18, GEN-11
+Prompt:
+How can a NestJS + MongoDB backend hold one or more rooms of the same hotel for 10 minutes so that the whole reservation succeeds or fails together, and two concurrent requests can never claim the same room for overlapping nights?
+How the output was used:
+Used the design of one claim document per (room, night) with a unique index, inserted with the reservation inside a single MongoDB transaction, so a duplicate on any room aborts everything. Implemented it in hotel-bookings.service.ts and hotel-booking.schema.ts.
+================================================
+Date: 2026-11-15
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: HTL-17, PAY-01
+Prompt:
+How should a hotel reservation be confirmed only after the backend has verified a successful Stripe payment, including the case where the hold expired before the payment arrived?
+How the output was used:
+Used the approach of checking for a SUCCEEDED payment of the exact reservation total, re-checking room claims, account and hotel status in a transaction, then generating the booking reference; a paid hold that lost its rooms is expired and refunded in full.
+================================================
+Date: 2026-11-15
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: HTL-21, HTL-10, PAY-03
+Prompt:
+How do I compute the cancellation refund for a whole hotel reservation from the hotel's days-before-check-in tiers, using the hotel's local date and the existing refunds service?
+How the output was used:
+Used the explanation to compute days before check-in in the hotel time zone, reuse RefundsService.calculateRefundPercentage/processRefund, and release the rooms in the same transaction as the cancellation.
+================================================
+Date: 2026-11-15
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: HTL-23, HTL-24
+Prompt:
+How can I allow exactly one 1-5 review per completed reservation and return a hotel's average rating, rating count and newest-first paginated reviews?
+How the output was used:
+Used the unique index on bookingId, automatic CONFIRMED -> COMPLETED after check-out, and an aggregation for average and count in reviews.service.ts.
+================================================
+Date: 2026-11-15
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: HTL-18 (testing)
+Prompt:
+Write end-to-end tests on a real MongoDB replica set that prove concurrent hotel reservations never double-book a room, plus hold expiry, confirmation, cancellation and review rules.
+How the output was used:
+Reviewed and kept the generated tests in test/hotel-bookings.e2e-spec.ts; they are the evidence for the concurrency requirement.
+================================================
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-01, ITN-03
+Prompt:
+How to design MongoDB schema and NestJS REST endpoints for creating, updating, deleting, and viewing itineraries with title validation (max 100 chars), countries, start date, and ownership checks?
+How the output was used:
+Used the proposed schema and service logic with ownership assertions in ItinerariesService and ItinerariesController.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-05, ITN-07, ITN-08, ITN-09
+Prompt:
+How should itinerary days be renumbered sequentially and have their calendar dates recalculated after adding, deleting, or reordering days, and how can consecutive days in the same city be grouped into stays?
+How the output was used:
+Implemented renumberAndRecalculateDays and groupConsecutiveDays helper functions in itineraries.schema.ts to maintain deterministic sequential dates and city stay groups.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-10, ITN-12, GEN-08
+Prompt:
+How to implement activity management and multipart image uploads in NestJS with multer, validating file size (max 5MB), image mime-types (JPEG, PNG, WebP), and enforcing a 5-image limit per activity?
+How the output was used:
+Implemented uploadActivityImages in ItinerariesService and configured diskStorage with mimetype and count guards in ActivitiesController.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-14, ITN-16, ITN-18
+Prompt:
+How should daily category budgets (food, accommodation, local transport, activities) and intercity transport costs be aggregated, and how to integrate FXRatesAPI to convert amounts into the user's preferred currency with graceful fallback handling?
+How the output was used:
+Built FxRatesService with 1-hour in-memory caching and fallback rate matrix, and implemented getBudgetSummary in ItinerariesService to compute category subtotals and overall converted totals.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-20, ITN-21
+Prompt:
+How can public itineraries be searched with text and duration filters, viewed by guests, and cloned by registered travelers into independent private copies while strictly preserving attribution?
+How the output was used:
+Implemented searchPublic with regex and array-size filters, and the clone endpoint in ItinerariesService with attribution metadata (clonedFrom) and independent ID regeneration.
+================================================
+Date: 2026-11-16
+Student: Mohamed Essam Elsadany
+Tool: Antigravity (Gemini)
+Related Requirement: ITN-25, ITN-26
+Prompt:
+How can hotel search queries be generated from consecutive itinerary city groups and flight search parameters derived from itinerary start, return, and intercity dates?
+How the output was used:
+Implemented getHotelSearchParameters and getFlightSearchParameters in ItinerariesService to provide pre-populated search queries for the booking modules.
+================================================

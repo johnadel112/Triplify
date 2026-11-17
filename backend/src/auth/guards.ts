@@ -11,13 +11,16 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthRequest } from '../common/http';
 import { UserRole } from '../common/domain';
+
 export const Public = () => SetMetadata('public', true);
+export const SkipCsrf = () => SetMetadata('skipCsrf', true);
 export const AllowPasswordChange = () => SetMetadata('allowPasswordChange', true);
 export const Roles = (...roles: UserRole[]) => SetMetadata('roles', roles);
 export const CurrentUser = createParamDecorator(
   (_: unknown, context: ExecutionContext) =>
     context.switchToHttp().getRequest<AuthRequest>().principal,
 );
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -50,6 +53,7 @@ export class JwtAuthGuard implements CanActivate {
     return true;
   }
 }
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
@@ -63,12 +67,24 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 }
+
 @Injectable()
 export class CsrfGuard implements CanActivate {
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private reflector: Reflector,
+  ) {}
   canActivate(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest<AuthRequest>();
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+    if (
+      this.reflector.getAllAndOverride<boolean>('skipCsrf', [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    )
+      return true;
+
     // Exact Origin plus a non-simple custom header forces browser preflight, including login.
     const origins = this.config.getOrThrow<string>('FRONTEND_URL').split(',');
     if (
