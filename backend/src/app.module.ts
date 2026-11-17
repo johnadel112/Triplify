@@ -12,16 +12,14 @@ import { CommonModule } from './common/common.module';
 import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
-feature/FLT-19-flight-booking
 import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
-
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { PaymentsModule } from './payments/payments.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { ItinerariesModule } from './itineraries/itineraries.module';
+import { BlogModule } from './blog/blog.module';
 
- feature/john-auth-admin
 @ApiTags('Health')
 @Controller('health')
 class HealthController {
@@ -50,15 +48,13 @@ class HealthController {
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
- feature/FLT-19-flight-booking
     FlightBookingsModule,
-
     NotificationsModule,
     ReportsModule,
     PaymentsModule,
     HotelBookingsModule,
     ItinerariesModule,
- feature/john-auth-admin
+    BlogModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
