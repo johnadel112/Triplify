@@ -368,6 +368,7 @@ export class PublicItinerarySearchDto {
   @ApiPropertyOptional({ example: 'Europe', description: 'Search keywords in title/description' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   q?: string;
 
   @ApiPropertyOptional({ example: 'FR', description: 'Country code filter' })

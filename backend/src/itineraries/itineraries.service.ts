@@ -817,10 +817,12 @@ export class ItinerariesService {
   async searchPublic(dto: PublicItinerarySearchDto) {
     const filter: FilterQuery<Itinerary> = { isPublic: true };
 
-    if (dto.q) {
+    if (dto.q?.trim()) {
+      // Match the keyword literally: user input must never be interpreted as a regex pattern.
+      const keyword = dto.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
-        { title: { $regex: dto.q.trim(), $options: 'i' } },
-        { description: { $regex: dto.q.trim(), $options: 'i' } },
+        { title: { $regex: keyword, $options: 'i' } },
+        { description: { $regex: keyword, $options: 'i' } },
       ];
     }
 

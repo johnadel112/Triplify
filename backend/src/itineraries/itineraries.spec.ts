@@ -601,4 +601,43 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       expect(res.searches[2].originCity).toBe('london');
     });
   });
+
+  describe('ITN-21: Public search keyword safety', () => {
+    const chain = () => {
+      const query = {
+        sort: jest.fn(),
+        skip: jest.fn(),
+        limit: jest.fn(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      query.sort.mockReturnValue(query);
+      query.skip.mockReturnValue(query);
+      query.limit.mockReturnValue(query);
+      return query;
+    };
+
+    it('matches the keyword literally instead of as a regular expression', async () => {
+      mockItineraryModel.find.mockReturnValue(chain());
+      mockItineraryModel.countDocuments.mockResolvedValue(0);
+
+      await service.searchPublic({ q: '  (a+)+$ .* ' } as never);
+
+      const filter = mockItineraryModel.find.mock.calls[0][0] as {
+        $or: { title?: { $regex: string } }[];
+      };
+      const pattern = filter.$or[0].title!.$regex;
+      expect(pattern).toBe('\\(a\\+\\)\\+\\$ \\.\\*');
+      expect(new RegExp(pattern, 'i').test('trip (a+)+$ .* notes')).toBe(true);
+      expect(new RegExp(pattern, 'i').test('aaaa')).toBe(false);
+    });
+
+    it('ignores a blank keyword', async () => {
+      mockItineraryModel.find.mockReturnValue(chain());
+      mockItineraryModel.countDocuments.mockResolvedValue(0);
+
+      await service.searchPublic({ q: '   ' } as never);
+
+      expect(mockItineraryModel.find.mock.calls[0][0]).toEqual({ isPublic: true });
+    });
+  });
 });
