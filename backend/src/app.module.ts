@@ -76,21 +76,10 @@ class HealthController {
     ReportsModule,
     PaymentsModule,
     HotelBookingsModule,
-    ItinerariesModule
-
-    // Magdy's module
+    ItinerariesModule,
     HotelsModule,
-
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 120,
-      },
-    ]),
-=======
     BlogModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
-
   ],
 
   controllers: [HealthController],
