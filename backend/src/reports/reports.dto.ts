@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { ReportStatus, ReportTargetType } from './reports.schema';
 
 export class CreateReportDto {
@@ -9,8 +20,7 @@ export class CreateReportDto {
   targetType!: ReportTargetType;
 
   @ApiProperty({ description: 'ID of the post, comment, review, or itinerary' })
-  @IsString()
-  @IsNotEmpty()
+  @IsMongoId()
   targetId!: string;
 
   @ApiProperty({ description: 'Reason for reporting this content', maxLength: 1000 })
