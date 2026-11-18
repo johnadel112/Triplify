@@ -72,7 +72,7 @@ first, 10 per page. Reviews of deactivated accounts are shown as "Deleted user" 
 | Magdy | HTL-02 / HTL-12 rating | `ReviewsService.getRatingSummaries(hotelIds)` |
 | Divan (PAY-01..03) | payment verification, refunds | reads the `Payment` collection (read-only); calls `RefundsService` |
 | Divan (GEN-10) | hide/delete reported reviews | `ReviewsService.setHidden(id, hidden)`, `ReviewsService.deleteByModeration(id)` |
-| John + Zeyad | `BOOKING_ACCESS` / `BOOKING_READER` | hotel halves: `hasUpcomingConfirmedBookings(userId, now, session)` and `findBookingSummaries(filters, limit)` (returns hotel total + first `limit` rows sorted by start desc, so the composite can merge before paginating). The composite adapter must be wired together with Zeyad's flight half. |
+| John + Zeyad | `BOOKING_ACCESS` / `BOOKING_READER` | hotel halves: `hasUpcomingConfirmedBookings(userId, now, session)` and `findBookingSummaries(filters, limit)` (returns hotel total + first `limit` rows sorted by start desc, so the composite can merge before paginating). **connected:** `BookingsCompositeAdapter` (`src/integrations/bookings.adapter.ts`) combines this hotel half with the flight half (`FlightBookingSummariesService`) and is provided by `BookingsIntegrationModule`; covered by `test/booking-integration.e2e-spec.ts`. |
 
 ## Open issues for teammates (not changed here)
 
