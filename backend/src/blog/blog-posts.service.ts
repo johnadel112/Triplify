@@ -231,16 +231,28 @@ export class BlogPostsService {
   // BLG-04: deletion cascades old comments and likes without changing teammates' code.
   async remove(actor: Principal, postId: string) {
     const post = await this.ownPost(actor, postId);
-    const images = [...post.images];
-    await this.posts.deleteOne({ _id: post._id, authorId: this.validId(actor.id) });
-    await Promise.all([
-      this.comments.deleteMany({ postId: post._id }),
-      this.likes.deleteMany({ postId: post._id }),
-    ]);
-    await Promise.all(images.map((image) =>
-      unlink(join(MEDIA_DIR, image.filename)).catch(() => undefined),
-    ));
+    await this.deleteWithDependents(post._id, post.images);
     return { deleted: true };
+  }
+
+  /** GEN-10: administrator deletion of a reported post, with the same cleanup as remove(). */
+  async removeByModeration(postId: string) {
+    const post = await this.posts.findById(this.validId(postId)).select('images').lean();
+    if (!post) throw new NotFoundException('Post not found');
+    await this.deleteWithDependents(post._id, post.images);
+  }
+
+  /** Deletes a post with its comments, likes and stored image files. */
+  private async deleteWithDependents(postId: Types.ObjectId, images: { filename: string }[]) {
+    const files = images.map((image) => image.filename);
+    await this.posts.deleteOne({ _id: postId });
+    await Promise.all([
+      this.comments.deleteMany({ postId }),
+      this.likes.deleteMany({ postId }),
+    ]);
+    await Promise.all(files.map((file) =>
+      unlink(join(MEDIA_DIR, file)).catch(() => undefined),
+    ));
   }
 
   // BLG-10 / GEN-08: upload to the server; actual JPG/PNG bytes, <= 5MB each, max 5/post.
