@@ -6,6 +6,7 @@ import { Flight, FlightSchema, AirlineProfile, AirlineProfileSchema } from './fl
 import { Airport, AirportSchema } from '../reference-data/reference.schema';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { AccountsModule } from '../auth/accounts.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AccountsModule } from '../auth/accounts.module';
     ]),
     IntegrationsModule,
     AccountsModule,
+    NotificationsModule,
   ],
   controllers: [FlightsController],
   providers: [FlightsService],

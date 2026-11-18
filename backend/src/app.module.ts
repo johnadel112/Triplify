@@ -22,6 +22,7 @@ import { AccountsModule } from './auth/accounts.module';
 import { AdminModule } from './admin/admin.module';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
 
+import { FlightsModule } from './flights/flights.module';
 import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
@@ -71,6 +72,7 @@ class HealthController {
     ReferenceDataModule,
 
 
+    FlightsModule,
     FlightBookingsModule,
     NotificationsModule,
     ReportsModule,
