@@ -637,7 +637,10 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
       await service.searchPublic({ q: '   ' } as never);
 
-      expect(mockItineraryModel.find.mock.calls[0][0]).toEqual({ isPublic: true });
+      expect(mockItineraryModel.find.mock.calls[0][0]).toEqual({
+        isPublic: true,
+        hidden: { $ne: true },
+      });
     });
   });
 });
