@@ -9,6 +9,7 @@ import { validateEnvironment } from './config/environment';
 
 import { DatabaseModule } from './database/database.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { BookingsIntegrationModule } from './integrations/bookings-integration.module';
 
 import {
   CsrfGuard,
@@ -67,6 +68,7 @@ class HealthController {
     DatabaseModule,
     CommonModule,
     IntegrationsModule,
+    BookingsIntegrationModule,
     AccountsModule,
     AdminModule,
     ReferenceDataModule,
