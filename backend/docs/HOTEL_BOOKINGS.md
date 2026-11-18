@@ -65,7 +65,7 @@ first, 10 per page. Reviews of deactivated accounts are shown as "Deleted user" 
 
 | Teammate | What | How |
 |---|---|---|
-| Magdy (HTL-01..15) | hotel and room data | implement `HotelInventoryPort` (`hotel-inventory.port.ts`) and replace the `HOTEL_INVENTORY` provider in `hotel-bookings.module.ts` with `useExisting: <adapter>`. Until then hotel booking endpoints return 503 `INTEGRATION_UNAVAILABLE` (team convention). Ranges are nights: `from` inclusive, `to` exclusive. |
+| Magdy (HTL-01..15) | hotel and room data | **connected:** `HotelInventoryAdapter` (in `src/hotels/`) implements `HotelInventoryPort` and is provided as `HOTEL_INVENTORY` in `hotel-bookings.module.ts`. Ranges are nights: `from` inclusive, `to` exclusive. Covered by `test/hotel-bookings.integration.e2e-spec.ts` (real hotels module, no fakes). |
 | Magdy | HTL-05/06 block/delete checks | `HotelBookingsService.hasActiveReservationsForRoom(roomId, from, to)` |
 | Magdy | HTL-08 room status | `HotelBookingsService.getRoomNightClaims(roomIds, from, to)` (with reference) |
 | Magdy | HTL-22 reservations view | `HotelBookingsService.findHotelReservations(actor, hotelId, page)` |

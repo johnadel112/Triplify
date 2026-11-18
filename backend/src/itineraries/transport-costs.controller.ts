@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Patch } from '@nestjs/common';
 import { ApiCookieAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
+import { CurrentUser, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
 import { UpdateTransportCostDto } from './itineraries.dto';
 import { ItinerariesService } from './itineraries.service';
@@ -8,7 +8,6 @@ import { ItinerariesService } from './itineraries.service';
 @ApiTags('Transport Costs')
 @ApiCookieAuth()
 @Controller('transport-costs')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class TransportCostsController {
   constructor(private readonly itinerariesService: ItinerariesService) {}
 

@@ -1,10 +1,9 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { FlightsService } from './flights.service';
-import { JwtAuthGuard, RolesGuard, Roles, CurrentUser, Public } from '../auth/guards';
+import { Roles, CurrentUser, Public } from '../auth/guards';
 import { UserRole } from '../common/domain';
 
 @Controller('flights')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class FlightsController {
   constructor(private readonly flightsService: FlightsService) {}
 
