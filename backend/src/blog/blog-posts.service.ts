@@ -148,7 +148,10 @@ export class BlogPostsService {
 
   // BLG-02 / BLG-09: only PUBLISHED posts; keyword in title, tags or author name.
   async search(query: BlogSearchDto) {
-    const where: FilterQuery<BlogPost> = { status: BlogPostStatus.PUBLISHED };
+    const where: FilterQuery<BlogPost> = {
+      status: BlogPostStatus.PUBLISHED,
+      hidden: { $ne: true },
+    };
     if (query.tag) where.tags = normalizeTags([query.tag])[0];
     const q = query.q?.trim();
     if (q) {
@@ -199,7 +202,7 @@ export class BlogPostsService {
   // BLG-02: guests can see published posts, never drafts.
   async getPublished(postId: string) {
     const row = await this.posts.findOne({
-      _id: this.validId(postId), status: BlogPostStatus.PUBLISHED,
+      _id: this.validId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
     }).lean();
     if (!row) throw new NotFoundException('Published post not found');
     const [view] = await this.present([row as unknown as Row], true);
@@ -299,6 +302,7 @@ export class BlogPostsService {
     if (!FILE_NAME.test(filename)) throw new NotFoundException('Image not found');
     const exists = await this.posts.exists({
       status: BlogPostStatus.PUBLISHED,
+      hidden: { $ne: true },
       'images.filename': filename,
     });
     if (!exists) throw new NotFoundException('Image not found');
@@ -314,8 +318,8 @@ export class BlogPostsService {
     }).select('name createdAt').lean();
     if (!author) throw new NotFoundException('Author not found');
     const page = query.page;
-    const postFilter = { authorId: id, status: BlogPostStatus.PUBLISHED };
-    const itineraryFilter = { userId: id, isPublic: true };
+    const postFilter = { authorId: id, status: BlogPostStatus.PUBLISHED, hidden: { $ne: true } };
+    const itineraryFilter = { userId: id, isPublic: true, hidden: { $ne: true } };
     const [posts, postTotal, itineraries, itineraryTotal] = await Promise.all([
       this.posts.find(postFilter).sort({ publishedAt: -1, _id: -1 })
         .skip((page - 1) * BLOG_PAGE_SIZE).limit(BLOG_PAGE_SIZE).lean(),
