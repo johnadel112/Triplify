@@ -135,3 +135,48 @@ How can hotel search queries be generated from consecutive itinerary city groups
 How the output was used:
 Implemented getHotelSearchParameters and getFlightSearchParameters in ItinerariesService to provide pre-populated search queries for the booking modules.
 ================================================
+Date: 2026-11-18
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: Integration fix of the merged backend (PR #10); HTL-16, HTL-18
+Prompt:
+Perform a complete audit of my hotel bookings part and its dependencies on the newly merged branch: check every branch, run build, lint and all tests, find why the project fails, and fix the problems one step at a time without overwriting teammates' work.
+How the output was used:
+Used the audit to find and fix the integration blockers: two unresolved merge conflicts (app.module.ts, flights.schema.ts, keeping the version that does not block sold-out flights), @nestjs/schedule 12 that Jest could not load (pinned to 6.1.x), redundant controller guards that crashed startup, the unregistered FlightsModule, and the hotel booking module still using the 503 placeholder (wired to the hotels module adapter with new integration tests). Verified each step with build, tests and a real server start.
+================================================
+Date: 2026-11-18
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-13, FLT-01, FLT-03, FLT-04, FLT-05, FLT-11 (PR #11)
+Prompt:
+Fix the 57 lint errors in the merged project properly, not just by silencing the linter.
+How the output was used:
+Replaced 'any' request types with validated DTOs. This closed real security issues in flights (airline profile takeover via moderatorId, editing airlineId/status, unvalidated cabinClass query path) and kept omitted fields from being erased on update. Typed test mocks in itineraries and added flight e2e tests. Lint went from 57 errors to 0.
+================================================
+Date: 2026-11-18
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: ITN-21 (PR #12)
+Prompt:
+Review the public itinerary search for problems found while fixing lint errors and fix them with tests.
+How the output was used:
+Used the analysis that the search keyword was passed to MongoDB as a raw regular expression (ReDoS risk, '.*' matching everything) to escape the keyword, ignore blank input, limit it to 100 characters and add unit tests.
+================================================
+Date: 2026-11-18
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: ACC-12, ACC-17 (PR #13)
+Prompt:
+Complete the missing flight half of the shared booking contracts and connect them so account deactivation and the admin booking overview work with real hotel and flight data.
+How the output was used:
+Added a read-only flight summaries service, a composite adapter that checks both sources inside the deactivation transaction and merges/sorts both lists before paginating, and end-to-end tests. Also fixed the flight module so it works standalone after a test hang showed the missing User model.
+================================================
+Date: 2026-11-18
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-09, GEN-10 (PR #14)
+Prompt:
+Make administrator report decisions (hide or delete) actually affect the reported post, comment, review or itinerary, and test it end to end.
+How the output was used:
+Added hidden flags and public-read filters for posts and itineraries (and comments), a content moderation service used by report resolution and the admin delete route, safe 404/409 handling and validation, shared post deletion cleanup, and end-to-end tests showing hidden content disappears from public pages.
+================================================
