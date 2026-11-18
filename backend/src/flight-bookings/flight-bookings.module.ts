@@ -8,6 +8,7 @@ import {
   FlightSchema,
 } from '../flights/flights.schema';
 import { Airport, AirportSchema } from '../reference-data/reference.schema';
+import { User, UserSchema } from '../users/user.schema';
 import { FlightBooking, FlightBookingSchema } from './flight-booking.schema';
 import { FlightBookingsController } from './flight-bookings.controller';
 import { FlightBookingsService } from './flight-bookings.service';
@@ -21,6 +22,8 @@ import { FlightBookingSummariesService } from './flight-booking-summaries.servic
       { name: Airport.name, schema: AirportSchema },
       { name: FlightBooking.name, schema: FlightBookingSchema },
       { name: AirlineProfile.name, schema: AirlineProfileSchema },
+      // Self-contained: the module (and its standalone spec) works without the global DatabaseModule.
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [FlightBookingsController],
