@@ -7,7 +7,6 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiConflictResponse,
@@ -18,7 +17,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser, JwtAuthGuard, Public, Roles, RolesGuard } from '../auth/guards';
+import { CurrentUser, Public, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
 import {
   AddDayDto,
@@ -38,7 +37,6 @@ import { ItinerariesService } from './itineraries.service';
 @ApiTags('Itineraries')
 @ApiCookieAuth()
 @Controller('itineraries')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ItinerariesController {
   constructor(private readonly itinerariesService: ItinerariesService) {}
 

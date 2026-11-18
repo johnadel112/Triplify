@@ -7,7 +7,6 @@ import {
   Patch,
   Post,
   UploadedFiles,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -15,7 +14,7 @@ import { ApiConsumes, ApiCookieAuth, ApiOkResponse, ApiOperation, ApiTags } from
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
+import { CurrentUser, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
 import { UpdateActivityDto } from './itineraries.dto';
 import { ItinerariesService } from './itineraries.service';
@@ -28,7 +27,6 @@ if (!existsSync(uploadDir)) {
 @ApiTags('Activities')
 @ApiCookieAuth()
 @Controller('activities')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ActivitiesController {
   constructor(private readonly itinerariesService: ItinerariesService) {}
 
