@@ -1,20 +1,28 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { AccountStatus, Principal, UserRole } from '../common/domain';
 import { City, Country } from '../reference-data/reference.schema';
 import { User } from '../users/user.schema';
 import { FxRatesService } from './fx-rates.service';
-import { BudgetCategory, Itinerary, ItineraryDocument, TransportType } from './itineraries.schema';
+import { BudgetCategory, Itinerary, TransportType } from './itineraries.schema';
 import { ItinerariesService } from './itineraries.service';
 
 describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
   let service: ItinerariesService;
   let fxRatesService: FxRatesService;
-  let mockItineraryModel: any;
-  let mockUserModel: any;
-  let mockCityModel: any;
-  let mockCountryModel: any;
-  let mockConfigService: any;
+  type MockModel = jest.Mock & {
+    find: jest.Mock;
+    findById: jest.Mock;
+    findOne: jest.Mock;
+    deleteOne: jest.Mock;
+    countDocuments: jest.Mock;
+  };
+  let mockItineraryModel: MockModel;
+  let mockUserModel: { findById: jest.Mock };
+  let mockCityModel: { findOne: jest.Mock };
+  let mockCountryModel: { findOne: jest.Mock };
+  let mockConfigService: { get: jest.Mock };
 
   const actorUser: Principal = {
     id: '507f1f77bcf86cd799439011',
@@ -40,7 +48,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     mockConfigService = {
       get: jest.fn().mockReturnValue(undefined),
     };
-    fxRatesService = new FxRatesService(mockConfigService);
+    fxRatesService = new FxRatesService(mockConfigService as unknown as ConfigService);
 
     mockItineraryModel = Object.assign(
       jest.fn().mockImplementation((doc) => ({
@@ -103,7 +111,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
         startDate: '2026-08-01',
       };
 
-      await expect(service.create(actorUser, dto as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create(actorUser, dto as never)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -162,7 +170,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
   describe('ITN-05, ITN-07, ITN-08: Days Management & Renumbering', () => {
     it('adds a day and automatically calculates dayNumber and date', async () => {
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         startDate: '2026-08-01',
@@ -184,7 +192,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
             cityName: 'Paris',
           },
         ],
-      } as any);
+      } as never);
 
       const res = await service.addDay(actorUser, '507f1f77bcf86cd799439001', {
         cityCode: 'paris',
@@ -198,7 +206,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       const day1Id = new Types.ObjectId('507f1f77bcf86cd79943901a');
       const day2Id = new Types.ObjectId('507f1f77bcf86cd79943902b');
 
-      const day1: any = {
+      const day1 = {
         _id: day1Id,
         dayNumber: 1,
         date: '2026-08-01',
@@ -206,7 +214,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
         activities: [],
         budgets: [],
       };
-      const day2: any = {
+      const day2 = {
         _id: day2Id,
         dayNumber: 2,
         date: '2026-08-02',
@@ -215,7 +223,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
         budgets: [],
       };
 
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         startDate: '2026-08-01',
@@ -224,7 +232,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       };
 
       mockItineraryModel.findById.mockResolvedValue(itineraryDoc);
-      jest.spyOn(service, 'getItineraryById').mockResolvedValue(itineraryDoc);
+      jest.spyOn(service, 'getItineraryById').mockResolvedValue(itineraryDoc as never);
 
       await service.reorderDays(actorUser, '507f1f77bcf86cd799439001', {
         dayIds: [day2Id.toString(), day1Id.toString()],
@@ -243,20 +251,20 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       const day1Id = new Types.ObjectId('507f1f77bcf86cd79943901a');
       const day2Id = new Types.ObjectId('507f1f77bcf86cd79943902b');
 
-      const day1: any = {
+      const day1 = {
         _id: day1Id,
         dayNumber: 1,
         date: '2026-08-01',
         cityCode: 'paris',
       };
-      const day2: any = {
+      const day2 = {
         _id: day2Id,
         dayNumber: 2,
         date: '2026-08-02',
         cityCode: 'london',
       };
 
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         startDate: '2026-08-01',
@@ -265,7 +273,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       };
 
       mockItineraryModel.findById.mockResolvedValue(itineraryDoc);
-      jest.spyOn(service, 'getItineraryById').mockResolvedValue(itineraryDoc);
+      jest.spyOn(service, 'getItineraryById').mockResolvedValue(itineraryDoc as never);
 
       await service.deleteDay(actorUser, '507f1f77bcf86cd799439001', day1Id.toString());
 
@@ -279,7 +287,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
   describe('ITN-10, ITN-12, GEN-08: Activities & Image validation', () => {
     it('enforces maximum 5 images limit per activity (GEN-08)', async () => {
       const actId = new Types.ObjectId('507f1f77bcf86cd7994390aa');
-      const activity: any = {
+      const activity = {
         _id: actId,
         title: 'Eiffel Tower',
         images: [
@@ -290,7 +298,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
         ],
       };
 
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         days: [{ activities: [activity] }],
@@ -316,19 +324,19 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
       // 4 existing + 2 new = 6 > 5 limit
       await expect(
-        service.uploadActivityImages(actorUser, actId.toString(), files as any),
+        service.uploadActivityImages(actorUser, actId.toString(), files as never),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects invalid image mime types (GEN-08)', async () => {
       const actId = new Types.ObjectId('507f1f77bcf86cd7994390aa');
-      const activity: any = {
+      const activity = {
         _id: actId,
         title: 'Eiffel Tower',
         images: [],
       };
 
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         days: [{ activities: [activity] }],
@@ -347,14 +355,14 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       ];
 
       await expect(
-        service.uploadActivityImages(actorUser, actId.toString(), files as any),
+        service.uploadActivityImages(actorUser, actId.toString(), files as never),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('ITN-14, ITN-16, ITN-18: Budgets, Transport & FXRates conversion', () => {
     it('calculates daily subtotals, transport costs, and converts to target currency correctly', async () => {
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         isPublic: true,
@@ -418,7 +426,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       const sourceId = new Types.ObjectId('507f1f77bcf86cd799439001');
       const authorId = new Types.ObjectId(otherUser.id);
 
-      const sourceDoc: any = {
+      const sourceDoc = {
         _id: sourceId,
         userId: authorId,
         title: 'Original Great Journey',
@@ -458,7 +466,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
               originalAuthorId: authorId,
               originalAuthorName: 'Original Author Name',
             },
-          }) as any,
+          }) as never,
       );
 
       const cloned = await service.clone(actorUser, sourceId.toString(), {});
@@ -471,7 +479,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
     it('rejects cloning a private itinerary', async () => {
       const sourceId = new Types.ObjectId('507f1f77bcf86cd799439001');
-      const sourceDoc: any = {
+      const sourceDoc = {
         _id: sourceId,
         userId: new Types.ObjectId(otherUser.id),
         title: 'Private Itinerary',
@@ -490,7 +498,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
   describe('ITN-25 & ITN-26: Hotel and Flight Search Reuse', () => {
     it('generates hotel search parameters grouped by consecutive stays (ITN-25)', async () => {
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         startDate: '2026-10-01',
@@ -526,7 +534,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
             nights: 2,
           },
         ],
-      } as any);
+      } as never);
 
       const res = await service.getHotelSearchParameters(actorUser, '507f1f77bcf86cd799439001');
       expect(res.cityGroups).toHaveLength(1);
@@ -537,7 +545,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     });
 
     it('generates flight search parameters for trip start, return, and intercity hops (ITN-26)', async () => {
-      const itineraryDoc: any = {
+      const itineraryDoc = {
         _id: new Types.ObjectId('507f1f77bcf86cd799439001'),
         userId: new Types.ObjectId(actorUser.id),
         startDate: '2026-10-01',
@@ -580,7 +588,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
             nights: 1,
           },
         ],
-      } as any);
+      } as never);
 
       const res = await service.getFlightSearchParameters(actorUser, '507f1f77bcf86cd799439001');
       expect(res.searches).toHaveLength(3); // INBOUND, INTERCITY, OUTBOUND_RETURN
