@@ -192,6 +192,10 @@ export class Itinerary {
   @Prop({ default: false, index: true })
   isPublic!: boolean;
 
+  /** GEN-10: hidden by an administrator; treated as private for everyone but the owner. */
+  @Prop({ default: false })
+  hidden!: boolean;
+
   @Prop({ type: [ItineraryDaySchema], default: [] })
   days!: ItineraryDay[];
 

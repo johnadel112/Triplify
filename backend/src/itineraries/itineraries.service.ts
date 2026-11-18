@@ -96,8 +96,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check
-    if (!itinerary.isPublic) {
+    // Visibility check (administrator-hidden itineraries behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this private itinerary');
       }
@@ -694,8 +694,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check
-    if (!itinerary.isPublic) {
+    // Visibility check (administrator-hidden itineraries behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this budget summary');
       }
@@ -815,7 +815,7 @@ export class ItinerariesService {
   // -------------------------------------------------------------
 
   async searchPublic(dto: PublicItinerarySearchDto) {
-    const filter: FilterQuery<Itinerary> = { isPublic: true };
+    const filter: FilterQuery<Itinerary> = { isPublic: true, hidden: { $ne: true } };
 
     if (dto.q?.trim()) {
       // Match the keyword literally: user input must never be interpreted as a regex pattern.
@@ -886,7 +886,9 @@ export class ItinerariesService {
       throw new BadRequestException('Invalid itinerary ID');
     }
 
-    const itinerary = await this.itineraryModel.findOne({ _id: id, isPublic: true }).lean();
+    const itinerary = await this.itineraryModel
+      .findOne({ _id: id, isPublic: true, hidden: { $ne: true } })
+      .lean();
     if (!itinerary) {
       throw new NotFoundException('Public itinerary not found');
     }
@@ -908,7 +910,7 @@ export class ItinerariesService {
       throw new NotFoundException('Source itinerary not found');
     }
 
-    if (!source.isPublic) {
+    if (!source.isPublic || source.hidden) {
       throw new ForbiddenException('Only public itineraries can be cloned');
     }
 

@@ -11,6 +11,10 @@ export class BlogComment {
 
   @Prop({ required: true, trim: true })
   content!: string;
+
+  /** GEN-10: hidden by an administrator; comment listings must exclude it. */
+  @Prop({ type: Boolean, default: false })
+  hidden!: boolean;
 }
 
 export const BlogCommentSchema = SchemaFactory.createForClass(BlogComment);

@@ -39,6 +39,9 @@ export class BlogPost {
   images!: PostImage[];
 
   @Prop({ type: Date }) publishedAt?: Date;
+
+  /** GEN-10: hidden by an administrator; never shown publicly. */
+  @Prop({ type: Boolean, default: false }) hidden!: boolean;
   createdAt!: Date;
   updatedAt!: Date;
 }

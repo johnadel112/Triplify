@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ContentModerationService } from './content-moderation.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Report, ReportStatus, ReportTargetType } from './reports.schema';
@@ -13,6 +14,7 @@ export class ReportsService {
     @InjectModel(Report.name) private reportModel: Model<Report>,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
+    private readonly moderation: ContentModerationService,
   ) {}
 
   async createReport(reporterId: string, dto: CreateReportDto) {
@@ -86,16 +88,47 @@ export class ReportsService {
       throw new NotFoundException('Report not found');
     }
 
+    if (report.status !== ReportStatus.OPEN) {
+      throw new ConflictException({
+        code: 'REPORT_ALREADY_RESOLVED',
+        message: 'This report has already been resolved.',
+      });
+    }
+
     const beforeStatus = report.status;
     let newStatus: ReportStatus = ReportStatus.DISMISSED;
     if (dto.action === 'HIDE') newStatus = ReportStatus.RESOLVED_HIDDEN;
     if (dto.action === 'DELETE') newStatus = ReportStatus.RESOLVED_DELETED;
+
+    // GEN-10: change the content itself first; a missing target aborts with 404 and changes nothing.
+    if (dto.action !== 'DISMISS') {
+      await this.moderation.apply(report.targetType, report.targetId, dto.action);
+    }
 
     report.status = newStatus;
     report.resolutionNotes = dto.notes;
     report.resolvedBy = new Types.ObjectId(adminId);
     report.resolvedAt = new Date();
     await report.save();
+
+    // Other open reports about the same content are settled by the same decision.
+    if (dto.action !== 'DISMISS') {
+      await this.reportModel.updateMany(
+        {
+          targetType: report.targetType,
+          targetId: report.targetId,
+          status: ReportStatus.OPEN,
+        },
+        {
+          $set: {
+            status: newStatus,
+            resolvedBy: new Types.ObjectId(adminId),
+            resolvedAt: new Date(),
+            resolutionNotes: `Resolved with report ${report.id as string}: ${dto.action}`,
+          },
+        },
+      );
+    }
 
     // Record audit log (GEN-07)
     // Note: AuditService.record can run without transaction or with dummy session
@@ -132,6 +165,9 @@ export class ReportsService {
     targetId: string,
     action: 'HIDE' | 'DELETE',
   ) {
+    // GEN-10: change the content itself; a missing target aborts with 404 and changes nothing.
+    await this.moderation.apply(targetType, targetId, action);
+
     // Record audit log (GEN-07)
     await this.auditService.record(
       adminId,

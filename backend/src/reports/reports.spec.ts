@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ContentModerationService } from './content-moderation.service';
 import { Model } from 'mongoose';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -16,6 +17,7 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
   };
   let mockAuditService: { record: jest.Mock };
   let mockNotificationsService: { createNotification: jest.Mock };
+  let mockModeration: { apply: jest.Mock };
 
   beforeEach(() => {
     mockReportModel = Object.assign(jest.fn(), {
@@ -34,10 +36,13 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
       createNotification: jest.fn().mockResolvedValue({}),
     };
 
+    mockModeration = { apply: jest.fn().mockResolvedValue(undefined) };
+
     service = new ReportsService(
       mockReportModel as unknown as Model<Report>,
       mockAuditService as unknown as AuditService,
       mockNotificationsService as unknown as NotificationsService,
+      mockModeration as unknown as ContentModerationService,
     );
   });
 
@@ -116,6 +121,78 @@ describe('Reports & Moderation Module (GEN-09, GEN-10, GEN-07)', () => {
         'DELETED',
         true,
       );
+    });
+  });
+  describe('GEN-10: moderation changes the reported content', () => {
+    const openReport = () => ({
+      id: 'report-2',
+      reporterId: '507f1f77bcf86cd799439011',
+      targetType: ReportTargetType.REVIEW,
+      targetId: '507f1f77bcf86cd799439055',
+      status: ReportStatus.OPEN,
+      save: jest.fn().mockResolvedValue({}),
+    });
+
+    it('hides the content, then settles every open report on it', async () => {
+      const report = openReport();
+      mockReportModel.findById.mockResolvedValue(report);
+      mockReportModel.updateMany.mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await service.resolveReport('507f1f77bcf86cd799439000', 'report-2', {
+        action: 'HIDE',
+      });
+
+      expect(mockModeration.apply).toHaveBeenCalledWith(
+        ReportTargetType.REVIEW,
+        '507f1f77bcf86cd799439055',
+        'HIDE',
+      );
+      expect(result.status).toBe(ReportStatus.RESOLVED_HIDDEN);
+      expect(mockReportModel.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetType: ReportTargetType.REVIEW,
+          targetId: '507f1f77bcf86cd799439055',
+          status: ReportStatus.OPEN,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('does not touch content when dismissing', async () => {
+      mockReportModel.findById.mockResolvedValue(openReport());
+      await service.resolveReport('507f1f77bcf86cd799439000', 'report-2', { action: 'DISMISS' });
+      expect(mockModeration.apply).not.toHaveBeenCalled();
+    });
+
+    it('leaves the report open when the content no longer exists', async () => {
+      const report = openReport();
+      mockReportModel.findById.mockResolvedValue(report);
+      mockModeration.apply.mockRejectedValue(new NotFoundException('review not found'));
+
+      await expect(
+        service.resolveReport('507f1f77bcf86cd799439000', 'report-2', { action: 'DELETE' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(report.save).not.toHaveBeenCalled();
+      expect(mockAuditService.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses to resolve a report twice', async () => {
+      mockReportModel.findById.mockResolvedValue({
+        ...openReport(),
+        status: ReportStatus.DISMISSED,
+      });
+      await expect(
+        service.resolveReport('507f1f77bcf86cd799439000', 'report-2', { action: 'HIDE' }),
+      ).rejects.toThrow(ConflictException);
+      expect(mockModeration.apply).not.toHaveBeenCalled();
+    });
+
+    it('applies direct admin deletion before logging it', async () => {
+      mockModeration.apply.mockRejectedValue(new NotFoundException('post not found'));
+      await expect(
+        service.moderateContent('507f1f77bcf86cd799439000', ReportTargetType.POST, 'x', 'DELETE'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockAuditService.record).not.toHaveBeenCalled();
     });
   });
 });

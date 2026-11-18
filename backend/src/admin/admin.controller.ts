@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  ParseEnumPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
@@ -120,7 +131,7 @@ export class AdminController {
   @ApiOperation({ summary: 'Delete or hide reported content (admin action)' })
   deleteContent(
     @CurrentUser() actor: Principal,
-    @Param('type') type: ReportTargetType,
+    @Param('type', new ParseEnumPipe(ReportTargetType)) type: ReportTargetType,
     @Param('id', ObjectIdPipe) id: string,
   ) {
     return this.reports.moderateContent(actor.id, type, id, 'DELETE');
