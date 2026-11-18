@@ -9,7 +9,6 @@ import {
   Query,
 } from '@nestjs/common';
 import {
-  ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiNotFoundResponse,

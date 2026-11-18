@@ -73,8 +73,9 @@ export class FxRatesService {
         }
       }
       this.logger.warn(`FXRatesAPI returned status ${response.status}; using fallback rates`);
-    } catch (err: any) {
-      this.logger.warn(`FXRatesAPI request failed (${err?.message}); using fallback rates`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`FXRatesAPI request failed (${reason}); using fallback rates`);
     } finally {
       if (timeout) clearTimeout(timeout);
     }

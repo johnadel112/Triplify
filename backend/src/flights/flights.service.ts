@@ -6,15 +6,16 @@ import {
   Inject,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types, ClientSession } from 'mongoose';
+import { FilterQuery, Model, Types, ClientSession } from 'mongoose';
 import { Flight, AirlineProfile } from './flights.schema';
 import { Airport } from '../reference-data/reference.schema';
-import {
-  PROVIDER_MANAGEMENT,
-  ProviderManagementPort,
-  NOTIFICATION_DELIVERY,
-  NotificationDeliveryPort,
-} from '../integrations/contracts';
+import { NOTIFICATION_DELIVERY, NotificationDeliveryPort } from '../integrations/contracts';
+import { AirlineProfileDto, CreateFlightDto, SearchFlightsQuery, UpdateFlightDto } from './flights.dto';
+
+/** Optional DTO fields exist as undefined; drop them so updates never erase stored values. */
+function definedOnly<T extends object>(dto: T): Partial<T> {
+  return Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
 import moment from 'moment-timezone';
 
 @Injectable()
@@ -27,7 +28,8 @@ export class FlightsService {
   ) {}
 
   // FLT-01, GEN-06: Moderator-specific airline profile editing & notifications
-  async updateAirlineProfile(userId: string, updateData: any, session?: ClientSession) {
+  async updateAirlineProfile(userId: string, dto: AirlineProfileDto, session?: ClientSession) {
+    const updateData = definedOnly(dto);
     let profile = await this.airlineModel
       .findOne({ moderatorId: new Types.ObjectId(userId) })
       .session(session || null);
@@ -51,7 +53,7 @@ export class FlightsService {
   }
 
   // FLT-03, FLT-04, FLT-05, FLT-06: Flight Creation & Inventory Validation
-  async createFlight(airlineId: string, dto: any) {
+  async createFlight(airlineId: string, dto: CreateFlightDto) {
     const {
       flightNumber,
       departureAirportCode,
@@ -93,7 +95,7 @@ export class FlightsService {
       );
     }
 
-    for (const [cabinName, cabinData] of Object.entries(cabins) as [string, any][]) {
+    for (const [cabinName, cabinData] of Object.entries(cabins) as [string, { seatCount: number }][]) {
       if (!Number.isInteger(cabinData.seatCount) || cabinData.seatCount <= 0) {
         throw new BadRequestException(
           `Cabin seat counts must be positive whole numbers (${cabinName}).`,
@@ -119,7 +121,7 @@ export class FlightsService {
   }
 
   // FLT-09, FLT-11, FLT-12: Search, Filter, Sort (One-way & Round-trip)
-  async searchFlights(queryDto: any) {
+  async searchFlights(queryDto: SearchFlightsQuery) {
     const {
       origin,
       destination,
@@ -131,7 +133,7 @@ export class FlightsService {
       sortBy,
     } = queryDto;
 
-    const query: any = {
+    const query: FilterQuery<Flight> = {
       departureAirport: origin,
       arrivalAirport: destination,
       [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
@@ -146,7 +148,7 @@ export class FlightsService {
 
     const outbound = await dbQuery.exec();
 
-    let returnFlights: any[] = [];
+    let returnFlights: typeof outbound = [];
     if (returnDate) {
       const returnQuery = {
         departureAirport: destination,
@@ -168,7 +170,8 @@ export class FlightsService {
   }
 
   // FLT-29, FLT-30: Automatic status transitions & airport locking rules
-  async updateFlight(flightId: string, airlineId: string, updateDto: any) {
+  async updateFlight(flightId: string, airlineId: string, dto: UpdateFlightDto) {
+    const updateDto = definedOnly(dto);
     const flight = await this.flightModel.findById(flightId);
     if (!flight) throw new NotFoundException('Flight not found');
 

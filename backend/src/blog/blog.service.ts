@@ -49,7 +49,7 @@ export class BlogService {
       try {
         await this.likeModel.create(filter);
         return { liked: true, message: 'Post liked' };
-      } catch (err) {
+      } catch {
         throw new BadRequestException('You have already liked this post.');
       }
     }
