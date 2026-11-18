@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { Principal, UserRole } from '../common/domain';
 import { City, Country } from '../reference-data/reference.schema';
 import { User } from '../users/user.schema';
@@ -815,7 +815,7 @@ export class ItinerariesService {
   // -------------------------------------------------------------
 
   async searchPublic(dto: PublicItinerarySearchDto) {
-    const filter: Record<string, any> = { isPublic: true };
+    const filter: FilterQuery<Itinerary> = { isPublic: true };
 
     if (dto.q) {
       filter.$or = [
@@ -834,7 +834,7 @@ export class ItinerariesService {
 
     if (dto.minDays || dto.maxDays) {
       filter.$expr = {};
-      const conditions: any[] = [];
+      const conditions: Record<string, unknown>[] = [];
       if (dto.minDays) {
         conditions.push({ $gte: [{ $size: { $ifNull: ['$days', []] } }, dto.minDays] });
       }
@@ -848,7 +848,7 @@ export class ItinerariesService {
       }
     }
 
-    let sort: Record<string, any> = { createdAt: -1 };
+    let sort: Record<string, 1 | -1> = { createdAt: -1 };
     if (dto.sortBy === 'startDate') sort = { startDate: dto.order === 'desc' ? -1 : 1 };
     else if (dto.sortBy === 'title') sort = { title: dto.order === 'desc' ? -1 : 1 };
 
