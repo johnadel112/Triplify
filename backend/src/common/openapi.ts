@@ -1,5 +1,4 @@
-import { OpenAPIObject } from '@nestjs/swagger';
-import { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
+import type { OpenAPIObject, SchemaObject } from '@nestjs/swagger';
 
 // Explicit response contracts supplement reflected DTO request schemas.
 export function addResponseContracts(document: OpenAPIObject) {
