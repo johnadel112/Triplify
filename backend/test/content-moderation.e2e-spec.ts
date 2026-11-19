@@ -162,6 +162,23 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     await del(`/admin/content/POST/${spam.id as string}`, admin.cookies).expect(404);
   });
 
+  it('BLG-07: likes toggle on published posts only', async () => {
+    const author = await account();
+    const reader = await account();
+    const live = await publishedPost(author.user._id);
+    const liked = await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(201);
+    expect(liked.body.liked).toBe(true);
+    const unliked = await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(201);
+    expect(unliked.body.liked).toBe(false);
+
+    await post(`/blog/posts/${new Types.ObjectId().toString()}/like`, reader.cookies).expect(404);
+    const draft = await posts.create({ authorId: author.user._id, title: 'Draft', body: 'Not yet' });
+    await post(`/blog/posts/${draft.id as string}/like`, reader.cookies).expect(404);
+    await posts.updateOne({ _id: live._id }, { $set: { hidden: true } });
+    await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(404);
+    expect(await likes.countDocuments({ userId: reader.user._id })).toBe(0);
+  });
+
   it('BLG-05: publicly lists only visible comments with stable pagination and safe authors', async () => {
     const author = await account();
     const deactivated = await account();

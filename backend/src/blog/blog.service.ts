@@ -84,6 +84,11 @@ export class BlogService {
 
   // BLG-07: Toggle like ensuring each user can like a post only once
   async toggleLike(postId: string, userId: string) {
+    // BLG-07: only published, visible posts can be liked (same rule as comments).
+    const post = await this.postModel.exists({
+      _id: new Types.ObjectId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+    });
+    if (!post) throw new NotFoundException('Published post not found');
     const filter = { postId: new Types.ObjectId(postId), userId: new Types.ObjectId(userId) };
     const existing = await this.likeModel.findOne(filter);
 
