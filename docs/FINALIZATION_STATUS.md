@@ -1,8 +1,9 @@
 # Finalization status
 
 Audit date: 2026-11-19. Working branch: `fix/project-finalization`, based on
-`b03565a` (`origin/feature/john-auth-admin`). Stage A is IN PROGRESS; Milestone 1
-is **not submission-ready**. No merge to main is authorized.
+`b03565a` (`origin/feature/john-auth-admin`). The local Milestone 1 backend gate is
+complete. Merge readiness remains blocked only by live Atlas verification and the
+repository's unavailable PR authorization. No merge to main is authorized.
 
 ## Repository evidence
 
@@ -10,16 +11,18 @@ is **not submission-ready**. No merge to main is authorized.
 - Merge history contains PRs #10–#15. GitHub search returned no open PRs.
 - Inspected merge commits `2746318` and `fa267d5`; current tracked source has no conflict markers.
 - Existing hotel inventory, booking access/admin overview, moderation and itinerary search repairs are present.
-- `AI_PROMPTS.txt` exists; `frontend/` and `develop` are absent.
+- `AI_PROMPTS.txt` exists. `develop` points to the verified backend commit. An incomplete
+  Milestone 2 draft is isolated on local branch `feature/frontend-foundation` at `49fe101`
+  and is not part of the backend branch.
 - GitHub connector reports read permission, no push permission. Publishing needs working Git credentials with write access.
-- Existing CI omits develop and PRs into the integration branch.
+- CI covers pushes and pull requests for `main`, `develop`, and the integration branch.
 
 ## Tracking
 
 | Task | Owner | Priority | Requirement ID | Status | Evidence/test | Commit or PR |
 |---|---|---|---|---|---|---|
 | Inspect integration and PR history | John | CRITICAL | Milestone 1 | COMPLETED | Remote fetch, merge history, PR search, conflict scan | Base b03565a |
-| Install/lint/build/unit/e2e | Team | CRITICAL | GEN-13 | VERIFIED | npm.cmd ci, lint/build, 108 unit tests and 85 e2e tests passed | Working branch |
+| Install/lint/build/unit/e2e | Team | CRITICAL | GEN-13 | VERIFIED | npm.cmd ci, lint/build, 111 unit tests and 90 e2e tests passed | Working branch |
 | Reject unsigned webhooks and fabricated provider results | Divan | CRITICAL | PAY-01, PAY-03 | VERIFIED | webhook-security.spec.ts, payment-provider.spec.ts; signed hotel tests and strict FAILED refund assertion | Working branch |
 | Authoritative booking price, ownership, hold validation | Divan | CRITICAL | PAY-01 | VERIFIED | booking-payment-source.spec.ts and payment-provider.spec.ts; snapshot price, owner query, currency/precision/hold rejection | Working branch |
 | Flight confirmation and delayed-payment reconciliation | Zeyad/Divan | CRITICAL | FLT-23, PAY-01 | VERIFIED | Signed HTTP integration, duplicate/out-of-order events, amount/owner mismatch and expired hold refund tests | Working branch |
@@ -32,7 +35,8 @@ is **not submission-ready**. No merge to main is authorized.
 | Visible comment listing | Yassin | HIGH | BLG-05 | VERIFIED | Public listing excludes hidden/deleted comments; 10-row stable pages and deactivated attribution tested | Working branch |
 | Airline provider ownership and dry-run migration | Yassin | HIGH | FLT-01, FLT-03 | VERIFIED | New writes use Principal.providerId; legacy lookup retained; dry-run/apply idempotent script documented | Working branch |
 | Atlas verification | Team | HIGH | Database integration | BLOCKED | No securely supplied Atlas test credentials; URI validator accepts mongodb+srv | Pending |
-| Frontend foundation, auth, API matrix and allocation | Team | HIGH | Milestone 2 | NOT STARTED | frontend directory absent | Pending |
+| Swagger endpoint documentation | Team | CRITICAL | Milestone 1 REST API | VERIFIED | `/api/docs-json` e2e asserts all 125 operations and response contracts, including PUT room calendars | Working branch |
+| Frontend foundation, auth, API matrix and allocation | Team | HIGH | Milestone 2 | IN PROGRESS | Draft isolated at `feature/frontend-foundation`/`49fe101`; development explicitly paused | Milestone 2 branch |
 | Dependency vulnerability remediation | Team | CRITICAL | GEN-13 | VERIFIED | npm audit fix updated lockfile; npm audit reports 0 vulnerabilities; npm ci succeeded | Working branch |
 
 ## Implementation order and limitations
@@ -77,3 +81,17 @@ blindly retried through Stripe. Provider activation/confirmation serialization a
 display are now implemented and locally covered. Hosted CI and the draft PR remain blocked by
 GitHub application/CLI authorization. Create the draft from:
 https://github.com/johnadel112/Triplify/compare/main...develop?expand=1
+
+## Final Milestone 1 verification (2026-11-19)
+
+- `npm.cmd run lint`: passed.
+- `npm.cmd run build`: passed.
+- `npm.cmd test -- --runInBand`: 17 suites, 111 tests passed.
+- `npm.cmd run test:e2e -- --runInBand`: 7 suites, 90 tests passed. Jest emitted a
+  non-failing `MaxListenersExceededWarning` while multiple disposable app servers closed.
+- After the Swagger contract fix, lint/build passed again and
+  `accounts.e2e-spec.ts` passed all 41 tests, including the exact 125-operation OpenAPI check.
+- Stripe signatures use the real Stripe SDK with local test secrets; Stripe API calls are mocked.
+  No live Stripe sandbox success is claimed.
+- No `MONGODB_URI` was available in the environment or an ignored `backend/.env`; a live Atlas
+  connection and transaction smoke test could not be executed.

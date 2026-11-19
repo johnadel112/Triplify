@@ -131,7 +131,7 @@ export function addResponseContracts(document: OpenAPIObject) {
   document.components ??= {};
   document.components.schemas = { ...document.components.schemas, ...schemas };
   for (const [path, item] of Object.entries(document.paths))
-    for (const method of ['get', 'post', 'patch', 'delete'] as const) {
+    for (const method of ['get', 'post', 'put', 'patch', 'delete'] as const) {
       const operation = item[method];
       if (!operation) continue;
       let result: SchemaObject | { $ref: string } = ref('Success');

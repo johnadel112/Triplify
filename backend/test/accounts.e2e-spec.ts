@@ -478,7 +478,33 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
   it('serves non-sensitive health, public reference data and OpenAPI', async () => {
     expect((await get('/health')).body).toEqual({ status: 'ok' });
     expect((await get('/reference/currencies')).body.items[0].code).toBe('USD');
-    await get('/docs-json').expect(200);
+    const document = (await get('/docs-json').expect(200)).body as {
+      paths: Record<string, Record<string, { responses?: object; parameters?: object[] }>>;
+    };
+    const operations = Object.entries(document.paths).flatMap(([path, methods]) =>
+      Object.entries(methods)
+        .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
+        .map(([method, operation]) => ({ path, method, operation })),
+    );
+    expect(operations).toHaveLength(125);
+    expect(document.paths).toEqual(
+      expect.objectContaining({
+        '/api/payments/webhook': expect.objectContaining({ post: expect.any(Object) }),
+        '/api/flight-bookings/{id}/cancel': expect.objectContaining({ post: expect.any(Object) }),
+        '/api/bookings/{type}/{id}/policies': expect.objectContaining({ get: expect.any(Object) }),
+        '/api/admin/providers/airlines/{id}/verify': expect.objectContaining({ patch: expect.any(Object) }),
+        '/api/blog/posts/{postId}/comments': expect.objectContaining({ get: expect.any(Object) }),
+        '/api/hotels/{hotelId}/rooms/{roomId}/availability': expect.objectContaining({
+          put: expect.objectContaining({
+            responses: expect.objectContaining({ '200': expect.any(Object), '400': expect.any(Object) }),
+            parameters: expect.arrayContaining([
+              expect.objectContaining({ in: 'header', name: 'X-Triplify-CSRF' }),
+            ]),
+          }),
+        }),
+      }),
+    );
+    expect(operations.every(({ operation }) => Boolean(operation.responses))).toBe(true);
   });
   it('seeds admin idempotently without password replacement or promotion', async () => {
     const credentials = {
