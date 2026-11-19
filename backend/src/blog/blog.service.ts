@@ -61,7 +61,7 @@ export class BlogService {
     });
   }
 
-  // BLG-06: Edit & Delete comments (with ownership checks)
+  // BLG-07: Edit & Delete comments (with ownership checks)
   async updateComment(commentId: string, userId: string, content: string) {
     if (!content?.trim() || content.trim().length > 500) {
       throw new BadRequestException('Comment must be 1-500 characters');
@@ -82,9 +82,9 @@ export class BlogService {
     return this.commentModel.findByIdAndDelete(commentId);
   }
 
-  // BLG-07: Toggle like ensuring each user can like a post only once
+  // BLG-06: Toggle like ensuring each user can like a post only once
   async toggleLike(postId: string, userId: string) {
-    // BLG-07: only published, visible posts can be liked (same rule as comments).
+    // Only published, visible posts can be liked (same rule as comments).
     const post = await this.postModel.exists({
       _id: new Types.ObjectId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
     });

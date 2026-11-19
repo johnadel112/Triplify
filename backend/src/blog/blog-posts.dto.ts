@@ -39,6 +39,15 @@ export class CreateBlogPostDto {
 
 export class UpdateBlogPostDto extends PartialType(CreateBlogPostDto) {}
 
+/** BLG-05: a comment body; the service also trims and re-checks the length. */
+export class CommentDto {
+  @ApiProperty({ minLength: 1, maxLength: 500, example: 'Great tips, thanks!' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  content!: string;
+}
+
 export class BlogPageDto {
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100000)

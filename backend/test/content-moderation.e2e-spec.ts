@@ -162,7 +162,17 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     await del(`/admin/content/POST/${spam.id as string}`, admin.cookies).expect(404);
   });
 
-  it('BLG-07: likes toggle on published posts only', async () => {
+  it('BLG-05: rejects non-string and over-long comments with 400', async () => {
+    const author = await account();
+    const live = await publishedPost(author.user._id);
+    const path = `/blog/posts/${live.id as string}/comments`;
+    await post(path, author.cookies).send({ content: 123 }).expect(400);
+    await post(path, author.cookies).send({ content: 'x'.repeat(501) }).expect(400);
+    await post(path, author.cookies).send({ content: 'ok', extra: true }).expect(400);
+    await post(path, author.cookies).send({ content: 'Nice post' }).expect(201);
+  });
+
+  it('BLG-06: likes toggle on published posts only', async () => {
     const author = await account();
     const reader = await account();
     const live = await publishedPost(author.user._id);

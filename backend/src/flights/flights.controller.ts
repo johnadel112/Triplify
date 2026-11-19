@@ -27,18 +27,21 @@ export class FlightsController {
 
   @Patch('airline-profile')
   @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'FLT-01: Edit my airline profile (name, logo, contact)' })
   async updateProfile(@CurrentUser() user: Principal, @Body() dto: AirlineProfileDto) {
     return this.flightsService.updateAirlineProfile(user.id, user.providerId!, dto);
   }
 
   @Post()
   @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'FLT-03, FLT-04: Create a flight with cabins, prices, seats and baggage allowance' })
   async createFlight(@CurrentUser() user: Principal, @Body() dto: CreateFlightDto) {
     return this.flightsService.createFlight(user.providerId!, dto);
   }
 
   @Get('search')
   @Public()
+  @ApiOperation({ summary: 'FLT-11, FLT-12, FLT-15: Search Scheduled flights (one-way or round trip) with filters and sorting' })
   async search(@Query() query: SearchFlightsQuery) {
     return this.flightsService.searchFlights(query);
   }
@@ -79,12 +82,14 @@ export class FlightsController {
 
   @Get(':id')
   @Public()
+  @ApiOperation({ summary: 'FLT-17: Flight details' })
   async getDetails(@Param('id', ObjectIdPipe) id: string) {
     return this.flightsService.getFlightById(id);
   }
 
   @Patch(':id')
   @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'FLT-05: Edit my Scheduled flight (airports locked once bookings are confirmed)' })
   async updateFlight(
     @CurrentUser() user: Principal,
     @Param('id', ObjectIdPipe) id: string,
