@@ -183,7 +183,7 @@ Added hidden flags and public-read filters for posts and itineraries (and commen
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request (student attribution not supplied)
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: PAY-01, PAY-03, PAY-04, Milestone 1 audit
 Prompt (excerpt from the supplied finalization request):
@@ -195,7 +195,7 @@ Reference documentation checked: https://docs.nestjs.com/faq/raw-body and https:
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: FLT-23, FLT-26, PAY-01, PAY-03, ACC-12, GEN-01
 Prompt (excerpt from the supplied finalization request):
@@ -207,7 +207,7 @@ Validation at this point: lint/build pass; 107 unit tests and 85 e2e tests pass.
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: ACC-15, PAY-02, BLG-05, FLT-01, FLT-03
 Prompt (excerpt from the supplied finalization request):
@@ -218,7 +218,7 @@ Replaced the fail-closed provider placeholder with a transactional hotel/airline
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: Milestone 1, PAY-01, PAY-03, FLT-23, FLT-26, ACC-12, REST/Swagger
 Prompt (excerpt):
@@ -229,7 +229,7 @@ Stopped the interrupted frontend dependency process and isolated the unverified 
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: Milestone 1, MongoDB Atlas, REST/Swagger, reference data
 Prompt (excerpt):
@@ -240,7 +240,7 @@ Confirmed Windows Wi-Fi already uses Google DNS and resolves the Atlas SRV recor
 
 ================================================
 Date: 2026-11-19
-Contributor: Codex, at repository user's request
+Contributor: JOHN
 Tool: OpenAI Codex
 Related Requirement: Milestone 1, MongoDB Atlas, PAY-01, PAY-03, Stripe test-mode integration
 Prompt (excerpt):
