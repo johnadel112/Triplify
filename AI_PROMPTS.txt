@@ -226,3 +226,14 @@ Prompt (excerpt):
 How the output was used:
 Stopped the interrupted frontend dependency process and isolated the unverified Milestone 2 source on `feature/frontend-foundation` so it is absent from the backend branch. Reran backend lint, build, 111 unit tests and 90 end-to-end tests. Audited Stripe signature/payment/refund and MongoDB transaction coverage. Confirmed no Atlas credentials were available, so no live Atlas claim was made. Found and fixed the OpenAPI response/CSRF enhancer omitting PUT operations, then added an e2e assertion that all 125 controller operations are documented. Updated backend/root setup documentation and finalization evidence. No production data, main merge, force push or destructive operation was performed.
 ================================================
+
+================================================
+Date: 2026-11-19
+Contributor: Codex, at repository user's request
+Tool: OpenAI Codex
+Related Requirement: Milestone 1, MongoDB Atlas, REST/Swagger, reference data
+Prompt (excerpt):
+"Diagnose and fix DNS resolution"; initialize MongoDB safely; start NestJS; seed and verify reference datasets; verify health, Swagger, database selection and the backend quality gate without destructive shared-database tests.
+How the output was used:
+Confirmed Windows Wi-Fi already uses Google DNS and resolves the Atlas SRV record; isolated the failure to the execution environment's injected localhost Node resolver, so no system-wide network setting was changed. Authenticated to Atlas with TLS intact, verified ping, sessions and an aborted read-only transaction, then started Nest against a process-only `triplify` override with booking sweep disabled. Initialized 25 schema collections/indexes and ran the official reference seed twice. Added the user-supplied FRA/Germany/Frankfurt row and regression coverage; verified API totals of 8 countries, 8 cities, 8 airports and 2 currencies. No attractions dataset exists in the repository, so none was fabricated. Lint/build, 111 unit tests and 90 e2e tests passed; e2e used disposable local replica sets, not Atlas. The user must still add `/triplify` to the ignored saved URI.
+================================================

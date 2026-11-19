@@ -1,4 +1,4 @@
-// Maintained Triplify starter dataset v1, from John's supplied airport sheet.
+// Maintained Triplify starter dataset v2, from John's supplied airport rows.
 // See docs/REFERENCE_DATA.md for field mapping, timezone provenance and coverage.
 export const countries = [
   { code: 'EG', name: 'Egypt' },
@@ -8,6 +8,7 @@ export const countries = [
   { code: 'FR', name: 'France' },
   { code: 'JP', name: 'Japan' },
   { code: 'SA', name: 'Saudi Arabia' },
+  { code: 'DE', name: 'Germany' },
 ];
 export const cities = [
   { code: 'cairo', name: 'Cairo', country: 'EG', timeZone: 'Africa/Cairo' },
@@ -17,6 +18,7 @@ export const cities = [
   { code: 'paris', name: 'Paris', country: 'FR', timeZone: 'Europe/Paris' },
   { code: 'tokyo', name: 'Tokyo', country: 'JP', timeZone: 'Asia/Tokyo' },
   { code: 'riyadh', name: 'Riyadh', country: 'SA', timeZone: 'Asia/Riyadh' },
+  { code: 'frankfurt', name: 'Frankfurt', country: 'DE', timeZone: 'Europe/Berlin' },
 ];
 export const airports = [
   {
@@ -61,6 +63,13 @@ export const airports = [
     city: 'riyadh',
     country: 'SA',
     timeZone: 'Asia/Riyadh',
+  },
+  {
+    iataCode: 'FRA',
+    name: 'Frankfurt Airport',
+    city: 'frankfurt',
+    country: 'DE',
+    timeZone: 'Europe/Berlin',
   },
 ];
 export const currencies = [

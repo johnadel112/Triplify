@@ -2,8 +2,9 @@
 
 Audit date: 2026-11-19. Working branch: `fix/project-finalization`, based on
 `b03565a` (`origin/feature/john-auth-admin`). The local Milestone 1 backend gate is
-complete. Merge readiness remains blocked only by live Atlas verification and the
-repository's unavailable PR authorization. No merge to main is authorized.
+complete. Live Atlas connectivity and transactions are verified; the saved Atlas URI still
+needs `/triplify` added to select the initialized application database. No further merge to
+main is authorized by this verification task.
 
 ## Repository evidence
 
@@ -34,7 +35,7 @@ repository's unavailable PR authorization. No merge to main is authorized.
 | Confirmation notification ownership | Divan | HIGH | GEN-01 | VERIFIED | Booking services own notifications; concurrent flight webhooks produce one; existing hotel notification test passes | Working branch |
 | Visible comment listing | Yassin | HIGH | BLG-05 | VERIFIED | Public listing excludes hidden/deleted comments; 10-row stable pages and deactivated attribution tested | Working branch |
 | Airline provider ownership and dry-run migration | Yassin | HIGH | FLT-01, FLT-03 | VERIFIED | New writes use Principal.providerId; legacy lookup retained; dry-run/apply idempotent script documented | Working branch |
-| Atlas verification | Team | HIGH | Database integration | BLOCKED | No securely supplied Atlas test credentials; URI validator accepts mongodb+srv | Pending |
+| Atlas verification | Team | HIGH | Database integration | IN PROGRESS | Live Atlas ping, replica-set session and aborted read-only transaction passed; `triplify` has 25 indexed collections and seeded 8/8/8/2 reference rows. Saved URI still defaults to `test` until `/triplify` is added manually. | fix/milestone1-atlas-reference |
 | Swagger endpoint documentation | Team | CRITICAL | Milestone 1 REST API | VERIFIED | `/api/docs-json` e2e asserts all 125 operations and response contracts, including PUT room calendars | Working branch |
 | Frontend foundation, auth, API matrix and allocation | Team | HIGH | Milestone 2 | IN PROGRESS | Draft isolated at `feature/frontend-foundation`/`49fe101`; development explicitly paused | Milestone 2 branch |
 | Dependency vulnerability remediation | Team | CRITICAL | GEN-13 | VERIFIED | npm audit fix updated lockfile; npm audit reports 0 vulnerabilities; npm ci succeeded | Working branch |
@@ -44,7 +45,7 @@ repository's unavailable PR authorization. No merge to main is authorized.
 First close payment trust-boundary failures with regression tests; then reconcile booking,
 refund and account/provider transactions. Do not certify payment integration based on mocked
 Stripe alone. Existing unit tests for refunds only cover arithmetic. Real Stripe sandbox and
-Atlas verification remain distinct from local MongoDB replica-set tests.
+Live Atlas verification remains distinct from local disposable replica-set tests.
 
 `backend/docs/TEAM_INTEGRATION.md` requires shared user-document writes for confirmation and
 deactivation, and provider state serialization. Its appended TypeORM sample is not the actual
@@ -74,8 +75,9 @@ and `npm.cmd run test:e2e -- --runInBand` (90 tests) passed as the Stage B gate.
 use isolated local replica sets. An intermediate TypeScript return-type error and missing
 currency on a unit fixture were fixed, then the full suites were rerun successfully.
 
-External Stripe sandbox, actual Atlas connectivity and hosted GitHub Actions results remain
-unverified. Existing historical duplicate payment/refund records need a read-only deployment
+External Stripe sandbox and hosted GitHub Actions results remain unverified. Atlas connectivity,
+authentication, read permissions and transaction support were verified without modifying team
+records. Existing historical duplicate payment/refund records need a read-only deployment
 audit. No records were migrated. Jobs with no provider reference older than 23 hours are not
 blindly retried through Stripe. Provider activation/confirmation serialization and policy
 display are now implemented and locally covered. Hosted CI and the draft PR remain blocked by
@@ -93,5 +95,8 @@ https://github.com/johnadel112/Triplify/compare/main...develop?expand=1
   `accounts.e2e-spec.ts` passed all 41 tests, including the exact 125-operation OpenAPI check.
 - Stripe signatures use the real Stripe SDK with local test secrets; Stripe API calls are mocked.
   No live Stripe sandbox success is claimed.
-- No `MONGODB_URI` was available in the environment or an ignored `backend/.env`; a live Atlas
-  connection and transaction smoke test could not be executed.
+- Atlas authentication, ping, replica-set sessions and an aborted read-only transaction passed.
+  Nest started against `triplify`; health, Swagger and reference endpoints returned HTTP 200.
+  The official idempotent seed produced 8 countries, 8 cities, 8 airports and 2 currencies.
+  The saved URI must still include `/triplify`; this execution environment required explicit
+  Google DNS because it injects an unavailable localhost resolver, while Windows DNS resolves normally.
