@@ -14,6 +14,9 @@ import { PaymentsController } from './payments.controller';
 import { PoliciesController } from './policies.controller';
 import { RefundsController } from './refunds.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FlightBooking, FlightBookingSchema } from '../flight-bookings/flight-booking.schema';
+import { HotelBooking, HotelBookingSchema } from '../hotel-bookings/hotel-booking.schema';
+import { BookingPaymentSource } from './booking-payment-source';
 
 @Module({
   imports: [
@@ -21,11 +24,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Payment.name, schema: PaymentSchema },
       { name: PolicyAcceptance.name, schema: PolicyAcceptanceSchema },
       { name: Refund.name, schema: RefundSchema },
+      { name: FlightBooking.name, schema: FlightBookingSchema },
+      { name: HotelBooking.name, schema: HotelBookingSchema },
     ]),
     NotificationsModule,
   ],
   controllers: [PaymentsController, PoliciesController, RefundsController],
-  providers: [PaymentsService, RefundsService],
+  providers: [PaymentsService, RefundsService, BookingPaymentSource],
   exports: [PaymentsService, RefundsService],
 })
 export class PaymentsModule {}

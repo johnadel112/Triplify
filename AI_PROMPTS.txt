@@ -180,3 +180,15 @@ Make administrator report decisions (hide or delete) actually affect the reporte
 How the output was used:
 Added hidden flags and public-read filters for posts and itineraries (and comments), a content moderation service used by report resolution and the admin delete route, safe 404/409 handling and validation, shared post deletion cleanup, and end-to-end tests showing hidden content disappears from public pages.
 ================================================
+
+================================================
+Date: 2026-11-19
+Contributor: Codex, at repository user's request (student attribution not supplied)
+Tool: OpenAI Codex
+Related Requirement: PAY-01, PAY-03, PAY-04, Milestone 1 audit
+Prompt (excerpt from the supplied finalization request):
+"Start by inspecting the latest feature/john-auth-admin branch and current repository state. Perform the repository audit, identify the actual Milestone 1 blockers, and start implementing the safe fixes on a dedicated working branch."
+How the output was used:
+Fetched integration history and audited payment/booking code. Added FINALIZATION_STATUS.md. Required signed raw Stripe webhooks, removed fabricated intent/refund fallbacks, scoped refund payment lookup to its owner, and read authoritative flight/hotel prices and hold validity for payment creation/retry. Added booking-specific Stripe creation idempotency key. Added unit and HTTP signature/provider-failure tests and converted existing hotel webhook fixtures to signed local payloads. These tests mock Stripe API calls; no real Stripe or Atlas verification is claimed. Flight confirmation/refund lifecycle integration remains outstanding.
+Reference documentation checked: https://docs.nestjs.com/faq/raw-body and https://docs.stripe.com/webhooks/signature
+================================================

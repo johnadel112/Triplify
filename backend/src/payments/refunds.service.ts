@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -66,6 +66,7 @@ export class RefundsService {
     const payment = await this.paymentModel.findOne({
       bookingId: dto.bookingId,
       bookingType: dto.bookingType,
+      userId: new Types.ObjectId(userId),
       status: { $in: [PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED] },
     });
 
@@ -90,15 +91,18 @@ export class RefundsService {
       };
     }
 
-    let stripeRefundId = `re_test_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    let stripeRefundId: string;
     try {
       const stripeRefund = await this.stripe.refunds.create({
         payment_intent: payment.stripePaymentIntentId,
         amount: Math.round(refundAmount * 100),
       });
       stripeRefundId = stripeRefund.id;
+      if (stripeRefund.status !== 'succeeded') {
+        throw new Error('Refund is not yet successful');
+      }
     } catch {
-      // In simulated test environment, retain test stripe refund id
+      throw new ServiceUnavailableException('Refund provider has not confirmed a successful refund');
     }
 
     const refund = new this.refundModel({

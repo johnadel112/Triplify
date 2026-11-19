@@ -13,7 +13,7 @@ export class CreatePaymentDto {
   bookingType!: BookingType;
 
   @ApiPropertyOptional({
-    description: 'Booking amount in platform currency (USD). If omitted, read from booking.',
+    description: 'Deprecated compatibility field; ignored. The server uses the booking price.',
   })
   @IsOptional()
   @IsNumber()

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -13,6 +14,7 @@ import { CreatePaymentDto } from './payments.dto';
 import { PaymentStatus, PLATFORM_CURRENCY } from './payments.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notifications.schema';
+import { BookingPaymentSource } from './booking-payment-source';
 
 @Injectable()
 export class PaymentsService {
@@ -24,6 +26,7 @@ export class PaymentsService {
     @InjectModel(PolicyAcceptance.name) private policyAcceptanceModel: Model<PolicyAcceptance>,
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly bookingSource: BookingPaymentSource,
   ) {
     const stripeKey =
       this.configService.get<string>('STRIPE_SECRET_KEY') ||
@@ -33,9 +36,11 @@ export class PaymentsService {
   }
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
+    const quote = await this.bookingSource.payable(userId, dto.bookingType, dto.bookingId);
     // PAY-02: Verify policy acceptance and timestamp before payment
     const acceptance = await this.policyAcceptanceModel.findOne({
       bookingId: dto.bookingId,
+      bookingType: dto.bookingType,
       userId: new Types.ObjectId(userId),
       accepted: true,
     });
@@ -49,27 +54,31 @@ export class PaymentsService {
     }
 
     // PAY-04: Single platform currency enforcement
-    const amount = dto.amount && dto.amount > 0 ? dto.amount : 150.0;
-    const currency = PLATFORM_CURRENCY.toLowerCase();
+    const amount = quote.amountCents / 100;
+    const currency = quote.currency.toLowerCase();
 
     // Call Stripe test mode PaymentIntent
-    let paymentIntentId = `pi_test_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    let clientSecret = `${paymentIntentId}_secret_${Math.random().toString(36).substring(2, 10)}`;
+    if (!this.configService.get<string>('STRIPE_SECRET_KEY')) {
+      throw new ServiceUnavailableException('Stripe payments are not configured');
+    }
+    let paymentIntentId: string;
+    let clientSecret: string;
 
     try {
       const intent = await this.stripe.paymentIntents.create({
-        amount: Math.round(amount * 100), // Stripe takes amounts in minor units (cents)
+        amount: quote.amountCents,
         currency,
         metadata: {
           bookingId: dto.bookingId,
           bookingType: dto.bookingType,
           userId,
         },
-      });
+      }, { idempotencyKey: `booking:${dto.bookingType}:${dto.bookingId}` });
       paymentIntentId = intent.id;
-      clientSecret = intent.client_secret || clientSecret;
+      if (!intent.client_secret) throw new Error('Missing client secret');
+      clientSecret = intent.client_secret;
     } catch {
-      // In local or offline test mode without valid Stripe keys, keep simulated test-mode intent
+      throw new ServiceUnavailableException('Payment provider could not create a payment');
     }
 
     const payment = new this.paymentModel({
@@ -108,8 +117,12 @@ export class PaymentsService {
       throw new ForbiddenException('Resource access denied');
     }
 
-    if (payment.status === PaymentStatus.SUCCEEDED) {
-      throw new BadRequestException('Payment has already succeeded');
+    if (![PaymentStatus.PENDING, PaymentStatus.FAILED].includes(payment.status)) {
+      throw new BadRequestException('Payment cannot be retried');
+    }
+    const quote = await this.bookingSource.payable(userId, payment.bookingType, payment.bookingId);
+    if (quote.amountCents !== Math.round(payment.amount * 100) || quote.currency !== payment.currency) {
+      throw new BadRequestException('Payment does not match booking price');
     }
 
     // Increment retry count
@@ -155,22 +168,21 @@ export class PaymentsService {
   async handleWebhook(rawBody: string | Buffer | Stripe.Event, signature?: string) {
     let event: Stripe.Event;
 
-    if (this.webhookSecret && signature) {
+    if (!this.webhookSecret) {
+      throw new ServiceUnavailableException('Stripe webhook is not configured');
+    }
+    if (!signature) {
+      throw new BadRequestException('Stripe signature is required');
+    }
+    {
       if (typeof rawBody !== 'string' && !Buffer.isBuffer(rawBody)) {
         throw new BadRequestException('Webhook signature verification failed: raw body required');
       }
       try {
         event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'invalid payload';
-        throw new BadRequestException(`Webhook signature verification failed: ${message}`);
+      } catch {
+        throw new BadRequestException('Webhook signature verification failed');
       }
-    } else if (typeof rawBody === 'string') {
-      event = JSON.parse(rawBody) as Stripe.Event;
-    } else if (Buffer.isBuffer(rawBody)) {
-      event = JSON.parse(rawBody.toString('utf8')) as Stripe.Event;
-    } else {
-      event = rawBody;
     }
 
     if (event.type === 'payment_intent.succeeded') {
