@@ -11,7 +11,7 @@ async function run() {
       airports: app.get(getModelToken(Airport.name)),
       currencies: app.get(getModelToken(Currency.name)),
     });
-    console.log('Reference dataset v1 seeded (7 countries, 7 cities, 7 airports, 2 currencies)');
+    console.log('Reference dataset v2 seeded (8 countries, 8 cities, 8 airports, 2 currencies)');
   } finally {
     await app.close();
   }

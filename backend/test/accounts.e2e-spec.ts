@@ -534,12 +534,17 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
     };
     await seedReference(models);
     await seedReference(models);
-    expect(await models.airports.countDocuments()).toBe(7);
-    expect(await models.cities.countDocuments()).toBe(7);
-    expect(await models.countries.countDocuments()).toBe(7);
+    expect(await models.airports.countDocuments()).toBe(8);
+    expect(await models.cities.countDocuments()).toBe(8);
+    expect(await models.countries.countDocuments()).toBe(8);
     expect(await models.currencies.countDocuments()).toBe(2);
     const airport = await models.airports.findOne({ iataCode: 'CAI' });
     expect(airport!.city).toBe('cairo');
+    expect(await models.airports.findOne({ iataCode: 'FRA' }).lean()).toMatchObject({
+      city: 'frankfurt',
+      country: 'DE',
+      timeZone: 'Europe/Berlin',
+    });
     for (const entry of await models.airports.find())
       expect(
         await models.cities.exists({
