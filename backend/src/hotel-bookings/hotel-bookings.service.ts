@@ -357,6 +357,9 @@ export class HotelBookingsService implements OnModuleInit {
       if (!failure) {
         const hotel = await this.inventory.getHotel(current.providerId.toString(), session);
         if (!hotel?.active) failure = 'HOTEL_NOT_BOOKABLE';
+        else if (this.inventory.coordinateConfirmation &&
+          !(await this.inventory.coordinateConfirmation(current.providerId.toString(), session)))
+          failure = 'HOTEL_NOT_BOOKABLE';
       }
 
       if (failure) {
@@ -553,7 +556,7 @@ export class HotelBookingsService implements OnModuleInit {
           },
           cancelled.policy.cancellationTiers,
         );
-        cancellation.refundStatus = 'SUCCEEDED';
+        cancellation.refundStatus = result.status === 'SUCCEEDED' ? 'SUCCEEDED' : result.status === 'FAILED' ? 'FAILED' : 'PENDING';
         if ('refundId' in result) cancellation.refundId = result.refundId as string;
       } catch (error) {
         cancellation.refundStatus = 'FAILED';

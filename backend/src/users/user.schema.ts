@@ -20,6 +20,7 @@ export class User {
   @Prop({ type: String, enum: ['HOTEL', 'AIRLINE'] }) providerType?: ProviderType;
   @Prop({ default: 0, select: false }) authVersion!: number;
   @Prop({ default: 0, select: false }) loginRevision!: number;
+  @Prop({ default: 0, select: false }) bookingRevision!: number;
   @Prop() lastLoginAt?: Date;
   @Prop() deactivatedAt?: Date;
   createdAt!: Date;

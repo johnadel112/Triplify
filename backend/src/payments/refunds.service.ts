@@ -1,18 +1,23 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import Stripe from 'stripe';
 import { Payment, Refund } from './payments.schema';
 import { ProcessRefundDto } from './payments.dto';
-import { PaymentStatus, PLATFORM_CURRENCY, RefundStatus } from './payments.constants';
+import { BookingType, PaymentStatus, RefundStatus } from './payments.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notifications.schema';
+import { RefundBookingSource } from './refund-booking-source';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 export interface CancellationTier {
   daysBefore: number;
   refundPercentage: number;
 }
+
+type RefundResult = { message: string; refundAmount: number; refundPercentage: number; status: 'NO_REFUND' }
+  | { refundId: string; amount: number; currency: string; refundPercentage: number; status: RefundStatus; stripeRefundId?: string; createdAt: Date };
 
 @Injectable()
 export class RefundsService {
@@ -23,6 +28,7 @@ export class RefundsService {
     @InjectModel(Refund.name) private refundModel: Model<Refund>,
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly bookingSource: RefundBookingSource,
   ) {
     const stripeKey =
       this.configService.get<string>('STRIPE_SECRET_KEY') ||
@@ -40,18 +46,11 @@ export class RefundsService {
       return 100;
     }
 
-    // Default provider cancellation tiers if none configured
-    // E.g., >= 7 days: 100%, >= 3 days: 50%, < 3 days: 0%
-    const tiers: CancellationTier[] =
-      customTiers && customTiers.length > 0
-        ? [...customTiers].sort((a, b) => b.daysBefore - a.daysBefore)
-        : [
-            { daysBefore: 7, refundPercentage: 100 },
-            { daysBefore: 3, refundPercentage: 50 },
-            { daysBefore: 0, refundPercentage: 0 },
-          ];
-
-    const days = daysBefore ?? 14;
+    if (!customTiers || daysBefore === undefined || !Number.isFinite(daysBefore)) {
+      throw new BadRequestException('Provider cancellation policy and cancellation time are required');
+    }
+    const tiers = [...customTiers].sort((a, b) => b.daysBefore - a.daysBefore);
+    const days = daysBefore;
     for (const tier of tiers) {
       if (days >= tier.daysBefore) {
         return tier.refundPercentage;
@@ -61,25 +60,28 @@ export class RefundsService {
     return 0;
   }
 
-  async processRefund(userId: string, dto: ProcessRefundDto, customTiers?: CancellationTier[]) {
+  async processRefund(userId: string, dto: ProcessRefundDto, customTiers?: CancellationTier[]): Promise<RefundResult> {
+    // The booking cancellation owns the policy calculation; DTO reason/days are not authorization.
+    void customTiers;
+    const quote = await this.bookingSource.quote(userId, dto.bookingType, dto.bookingId);
     // Find successful payment for this booking
     const payment = await this.paymentModel.findOne({
       bookingId: dto.bookingId,
       bookingType: dto.bookingType,
-      status: { $in: [PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED] },
+      userId: new Types.ObjectId(userId),
+      status: { $in: [PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED] },
     });
 
     if (!payment) {
       throw new NotFoundException('No completed payment found for this booking');
     }
 
-    const refundPercentage = this.calculateRefundPercentage(
-      dto.reason,
-      dto.daysBefore,
-      customTiers,
-    );
-
-    const refundAmount = Number(((payment.amount * refundPercentage) / 100).toFixed(2));
+    if (quote.currency !== payment.currency || quote.totalCents !== Math.round(payment.amount * 100) ||
+      !Number.isSafeInteger(quote.amountCents) || quote.amountCents < 0 || quote.amountCents > quote.totalCents) {
+      throw new ConflictException('Refund does not match the paid booking');
+    }
+    const refundAmount = quote.amountCents / 100;
+    const refundPercentage = quote.totalCents ? quote.amountCents * 100 / quote.totalCents : 0;
 
     if (refundAmount <= 0) {
       return {
@@ -90,40 +92,52 @@ export class RefundsService {
       };
     }
 
-    let stripeRefundId = `re_test_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    // Reuse historical records; new jobs use the payment ObjectId as their deterministic primary key.
+    let refund = await this.refundModel.findOne({ paymentId: payment.id as string });
+    if (!refund) refund = await this.refundModel.findOneAndUpdate({ _id: payment._id }, { $setOnInsert: {
+      paymentId: payment.id, bookingId: dto.bookingId, bookingType: dto.bookingType,
+      userId: payment.userId, amount: refundAmount, currency: payment.currency,
+      reason: quote.reason, refundPercentage, status: RefundStatus.PENDING,
+    } }, { upsert: true, new: true });
+    if (!refund) throw new ServiceUnavailableException('Could not persist refund request');
+    if (refund.amount !== refundAmount) throw new ConflictException('An existing refund has a different amount');
+
+    if (refund.status !== RefundStatus.SUCCEEDED) {
+    const needsManualReview = !refund.stripeRefundId && Date.now() - refund.createdAt.getTime() > 23 * 60 * 60 * 1000;
     try {
-      const stripeRefund = await this.stripe.refunds.create({
+      if (needsManualReview) {
+        throw new ServiceUnavailableException('Manual provider reconciliation required before retrying an old refund');
+      }
+      const stripeRefund = refund.stripeRefundId ? await this.stripe.refunds.retrieve(refund.stripeRefundId) : await this.stripe.refunds.create({
         payment_intent: payment.stripePaymentIntentId,
-        amount: Math.round(refundAmount * 100),
+        amount: quote.amountCents,
+      }, { idempotencyKey: `cancellation-refund:${payment.id as string}` });
+      const status = stripeRefund.status === 'succeeded' ? RefundStatus.SUCCEEDED
+        : stripeRefund.status === 'failed' || stripeRefund.status === 'canceled' ? RefundStatus.FAILED : RefundStatus.PENDING;
+      // Concurrent responses must never downgrade a completed job.
+      await this.refundModel.updateOne({ _id: refund._id, status: { $ne: RefundStatus.SUCCEEDED } }, {
+        $set: { stripeRefundId: stripeRefund.id, status }, $unset: { errorMessage: 1 },
       });
-      stripeRefundId = stripeRefund.id;
     } catch {
-      // In simulated test environment, retain test stripe refund id
+      await this.refundModel.updateOne({ _id: refund._id, status: { $ne: RefundStatus.SUCCEEDED } }, {
+        $set: { status: RefundStatus.FAILED, errorMessage: needsManualReview ? 'MANUAL_PROVIDER_RECONCILIATION_REQUIRED' : 'Provider request failed; retry with the same idempotency key' },
+      });
+      const current = await this.refundModel.findById(refund._id);
+      if (current?.status === RefundStatus.SUCCEEDED) return this.processRefund(userId, dto);
+      await this.bookingSource.recordStatus(dto.bookingType, dto.bookingId, RefundStatus.FAILED, refund.id as string);
+      throw new ServiceUnavailableException('Refund provider has not confirmed a successful refund');
     }
-
-    const refund = new this.refundModel({
-      paymentId: payment.id,
-      bookingId: dto.bookingId,
-      bookingType: dto.bookingType,
-      userId: new Types.ObjectId(userId),
-      amount: refundAmount,
-      currency: PLATFORM_CURRENCY,
-      stripeRefundId,
-      reason: dto.reason,
-      refundPercentage,
-      status: RefundStatus.SUCCEEDED,
-      createdAt: new Date(),
-    });
-
-    await refund.save();
-
+    refund = (await this.refundModel.findById(refund._id))!;
+    }
+    await this.bookingSource.recordStatus(dto.bookingType, dto.bookingId, refund.status, refund.id as string);
+    if (refund.status === RefundStatus.SUCCEEDED) {
     // Update payment status
-    payment.status =
-      refundPercentage === 100 ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED;
-    await payment.save();
+    await this.paymentModel.updateOne({ _id: payment._id }, { $set: {
+      status: quote.amountCents === quote.totalCents ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED,
+    }, $unset: { errorMessage: 1 } });
 
     // GEN-01: Notify user of refund
-    await this.notificationsService.createNotification({
+    await this.notificationsService.createNotificationOnce(refund.id as string, {
       userId: payment.userId,
       title: 'Refund Processed',
       message: `A refund of ${refundAmount} ${refund.currency} (${refundPercentage}%) has been issued for your ${dto.bookingType.toLowerCase()} cancellation.`,
@@ -134,9 +148,11 @@ export class RefundsService {
         amount: refundAmount,
       },
     });
+    await this.refundModel.updateOne({ _id: refund._id }, { $set: { settled: true } });
+    }
 
     return {
-      refundId: refund.id,
+      refundId: refund.id as string,
       amount: refund.amount,
       currency: refund.currency,
       refundPercentage: refund.refundPercentage,
@@ -144,6 +160,20 @@ export class RefundsService {
       stripeRefundId: refund.stripeRefundId,
       createdAt: refund.createdAt,
     };
+  }
+
+  async requestRefund(input: { bookingId: string; userId: string }) {
+    await this.processRefund(input.userId, { bookingId: input.bookingId, bookingType: BookingType.FLIGHT, reason: 'USER_CANCELLATION' });
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async reconcileRefunds() {
+    const jobs = await this.refundModel.find({ settled: { $ne: true }, errorMessage: { $ne: 'MANUAL_PROVIDER_RECONCILIATION_REQUIRED' } }).limit(100).lean();
+    for (const job of jobs) {
+      try {
+        await this.processRefund(job.userId.toString(), { bookingId: job.bookingId, bookingType: job.bookingType, reason: job.reason });
+      } catch { /* Failure is persisted on the job; a later sweep retries with the same provider key. */ }
+    }
   }
 
   async getRefund(refundId: string, userId: string, isAdmin = false) {

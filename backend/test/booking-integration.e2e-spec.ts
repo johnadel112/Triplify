@@ -9,12 +9,21 @@ import request from 'supertest';
 import { hash } from 'bcryptjs';
 import { AccountStatus, UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
-import { PROVIDER_MANAGEMENT } from '../src/integrations/contracts';
 import { configureApp } from '../src/bootstrap';
 import { FlightBooking } from '../src/flight-bookings/flight-booking.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
 import { HotelBooking } from '../src/hotel-bookings/hotel-booking.schema';
 import { HotelBookingStatus } from '../src/hotel-bookings/hotel-bookings.constants';
+import { Payment, Refund, PolicyAcceptance } from '../src/payments/payments.schema';
+import { PaymentsService } from '../src/payments/payments.service';
+import { BookingType } from '../src/payments/payments.constants';
+import { FlightBookingsService } from '../src/flight-bookings/flight-bookings.service';
+import { UsersService } from '../src/users/users.service';
+import { Notification } from '../src/notifications/notifications.schema';
+import { signedEvent, webhookTestSecret } from './stripe-test-signature';
+import { RefundsService } from '../src/payments/refunds.service';
+import { Hotel } from '../src/hotels/hotel.schema';
+import { AdminService } from '../src/admin/admin.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -30,9 +39,12 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
   let flightBookings: Model<FlightBooking>;
   let flights: Model<Flight>;
   let airlines: Model<AirlineProfile>;
+  let hotels: Model<Hotel>;
   let passwordHash: string;
   const password = 'Secure12345';
   const now = () => Date.now();
+  const refundCreate = jest.fn();
+  const refundRetrieve = jest.fn();
 
   const server = () => app.getHttpServer() as Parameters<typeof request>[0];
   const post = (path: string, cookies: string[]) =>
@@ -43,6 +55,9 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
       .set('Cookie', cookies);
   const get = (path: string, cookies: string[]) =>
     request(server()).get(`/api${path}`).set('Cookie', cookies);
+  const patch = (path: string, cookies: string[]) =>
+    request(server()).patch(`/api${path}`).set('Origin', 'http://localhost:5173')
+      .set('X-Triplify-CSRF', '1').set('Cookie', cookies);
 
   async function account(role = UserRole.USER) {
     const user = await users.create({
@@ -149,13 +164,11 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
+    process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
     const { AppModule } = await import('../src/app.module');
-    // BOOKING_ACCESS and BOOKING_READER are the real adapters here; only provider management is mocked.
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PROVIDER_MANAGEMENT)
-      .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
-      .compile();
-    app = moduleRef.createNestApplication();
+    // Booking and provider integration adapters are real in this suite.
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication({ rawBody: true });
     app.useLogger(false);
     configureApp(app);
     await app.init();
@@ -164,12 +177,16 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     flightBookings = app.get(getModelToken(FlightBooking.name));
     flights = app.get(getModelToken(Flight.name));
     airlines = app.get(getModelToken(AirlineProfile.name));
+    hotels = app.get(getModelToken(Hotel.name));
+    Object.assign(app.get(RefundsService), { stripe: { refunds: { create: refundCreate, retrieve: refundRetrieve } } });
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.init()));
     passwordHash = await hash(password, 10);
   });
 
   beforeEach(async () => {
+    refundCreate.mockReset().mockResolvedValue({ id: 're_test_fixture', status: 'succeeded' });
+    refundRetrieve.mockReset().mockResolvedValue({ id: 're_test_fixture', status: 'succeeded' });
     app.get<ThrottlerStorageService>(ThrottlerStorage).onApplicationShutdown();
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.deleteMany({})));
@@ -185,13 +202,14 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     const airline = await airlines.create({ moderatorId, name: 'Nile Air' });
     const flight = await flights.create({
       flightNumber: 'MS777',
-      airlineId: moderatorId,
+      airlineId: airline._id,
       departureAirport: 'CAI',
       arrivalAirport: 'JFK',
       departureTimeUtc: new Date(now() + 30 * DAY),
       arrivalTimeUtc: new Date(now() + 30 * DAY + 3600 * 1000),
       departureDate: '2030-01-01',
       cabins: { economy: { seatCount: 10, price: 300 } },
+      cancellationTiers: [{ hoursBeforeDeparture: 48, refundPercentage: 50 }],
     });
     return { airline, flight };
   }
@@ -205,6 +223,245 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
       .expect(409);
     expect(JSON.stringify(blocked.body)).toContain('Upcoming Confirmed bookings');
     expect((await users.findById(traveler.user._id))!.status).toBe(AccountStatus.ACTIVE);
+  });
+
+  async function pendingPaidFlight() {
+    const traveler = await account();
+    const { flight } = await airlineFlight();
+    const service = app.get(FlightBookingsService);
+    const draft = await service.createDraft(traveler.user.id as string, {
+      legs: [{ flightId: flight.id as string, cabinClass: 'economy' }],
+      passengers: [{ firstName: 'A', lastName: 'B', dateOfBirth: '1990-01-01', passportNumber: 'X1', type: 'adult' }],
+    });
+    await service.hold(traveler.user.id as string, String(draft._id));
+    const payment = await app.get<Model<Payment>>(getModelToken(Payment.name)).create({
+      bookingId: String(draft._id), bookingType: 'FLIGHT', userId: traveler.user._id,
+      amount: 300, currency: 'USD', status: 'PENDING', stripePaymentIntentId: `pi_${draft._id}`, stripeClientSecret: 'test-only',
+    });
+    const intent = { id: payment.stripePaymentIntentId, status: 'succeeded', amount_received: 30000, currency: 'usd',
+      metadata: { bookingId: payment.bookingId, bookingType: 'FLIGHT', userId: traveler.user.id as string } };
+    return { traveler, draft, payment, intent, service };
+  }
+
+  const webhook = (type: string, object: object) => {
+    const signed = signedEvent({ type, data: { object } });
+    return request(server()).post('/api/payments/webhook').set('Content-Type', 'application/json')
+      .set('stripe-signature', signed.signature).send(signed.payload);
+  };
+
+  it('FLT-23/PAY-01: signed payment confirms once; late failure cannot regress success', async () => {
+    const { draft, payment, intent } = await pendingPaidFlight();
+    await Promise.all([webhook('payment_intent.succeeded', intent).expect(201), webhook('payment_intent.succeeded', intent).expect(201)]);
+    await webhook('payment_intent.payment_failed', { ...intent, last_payment_error: { message: 'old failure' } }).expect(201);
+    expect((await flightBookings.findById(draft._id))?.status).toBe('CONFIRMED');
+    expect((await app.get<Model<Payment>>(getModelToken(Payment.name)).findById(payment._id))?.status).toBe('SUCCEEDED');
+    expect(await app.get<Model<Notification>>(getModelToken(Notification.name)).countDocuments({ 'metadata.bookingId': String(draft._id), type: 'BOOKING_CONFIRMED' })).toBe(1);
+  });
+
+  it('PAY-01: rejects signed events with incorrect amount or owner metadata', async () => {
+    const { draft, payment, intent } = await pendingPaidFlight();
+    await webhook('payment_intent.succeeded', { ...intent, amount_received: 1 }).expect(400);
+    await webhook('payment_intent.succeeded', { ...intent, metadata: { ...intent.metadata, userId: String(new Types.ObjectId()) } }).expect(400);
+    expect((await flightBookings.findById(draft._id))?.status).toBe('PENDING');
+    expect((await app.get<Model<Payment>>(getModelToken(Payment.name)).findById(payment._id))?.status).toBe('PENDING');
+  });
+
+  it('PAY-01: late payment cannot resurrect an expired flight hold and records refund work', async () => {
+    const { draft, payment, intent, service } = await pendingPaidFlight();
+    await flightBookings.updateOne({ _id: draft._id }, { $set: { holdExpiresAt: new Date(0) } });
+    await service.expireOne(draft._id);
+    await webhook('payment_intent.succeeded', intent).expect(201);
+    expect((await flightBookings.findById(draft._id))?.status).toBe('EXPIRED');
+    expect((await app.get<Model<Payment>>(getModelToken(Payment.name)).findById(payment._id))?.status).toBe('REFUNDED');
+  });
+
+  it('PAY-01: concurrent creation uses one payment record and the server price', async () => {
+    const { traveler, draft, payment } = await pendingPaidFlight();
+    const model = app.get<Model<Payment>>(getModelToken(Payment.name));
+    await model.deleteOne({ _id: payment._id });
+    await app.get<Model<PolicyAcceptance>>(getModelToken(PolicyAcceptance.name)).create({
+      bookingId: String(draft._id), bookingType: 'FLIGHT', userId: traveler.user._id, accepted: true,
+    });
+    const service = app.get(PaymentsService);
+    const originalStripe = Reflect.get(service, 'stripe');
+    const originalConfig = Reflect.get(service, 'configService');
+    const create = jest.fn().mockResolvedValue({ id: 'pi_concurrent_fixture', client_secret: 'secret_fixture' });
+    Object.assign(service, { stripe: { paymentIntents: { create } }, configService: { get: () => 'sk_test_fixture' } });
+    try {
+      const responses = await Promise.all([
+        post('/payments', traveler.cookies).send({ bookingId: String(draft._id), bookingType: 'FLIGHT', amount: 1 }).expect(201),
+        post('/payments', traveler.cookies).send({ bookingId: String(draft._id).toUpperCase(), bookingType: 'FLIGHT', amount: 2 }).expect(201),
+      ]);
+      expect(responses[0].body.paymentId).toBe(responses[1].body.paymentId);
+      expect(responses.every(r => r.body.amount === 300)).toBe(true);
+      expect(await model.countDocuments({ bookingId: String(draft._id) })).toBe(1);
+      for (const call of create.mock.calls) expect(call).toEqual([
+        expect.objectContaining({ amount: 30000, currency: 'usd' }),
+        { idempotencyKey: `booking:FLIGHT:${draft._id}` },
+      ]);
+    } finally { Object.assign(service, { stripe: originalStripe, configService: originalConfig }); }
+  });
+
+  it('FLT-26/PAY-03: cancellation uses the snapshot, ignores forged refund tiers, and deduplicates retries', async () => {
+    const { traveler, draft, intent } = await pendingPaidFlight();
+    await webhook('payment_intent.succeeded', intent).expect(201);
+    await post(`/flight-bookings/${draft._id}/cancel`, traveler.cookies).send({}).expect(201);
+    const refunds = app.get(RefundsService);
+    await Promise.all([1, 2].map(() => refunds.processRefund(traveler.user.id as string, {
+      bookingId: String(draft._id), bookingType: BookingType.FLIGHT, reason: 'PROVIDER_CANCELLATION', daysBefore: 999,
+    })));
+    expect(refundCreate).toHaveBeenCalledTimes(1);
+    expect(refundCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 15000 }), expect.objectContaining({ idempotencyKey: expect.any(String) }));
+    expect(await app.get<Model<Refund>>(getModelToken(Refund.name)).countDocuments({ bookingId: String(draft._id) })).toBe(1);
+    expect(await app.get<Model<Notification>>(getModelToken(Notification.name)).countDocuments({ 'metadata.bookingId': String(draft._id), type: 'REFUND_ISSUED' })).toBe(1);
+  });
+
+  it('PAY-03: rejects refunds before cancellation and for another owner', async () => {
+    const { traveler, draft, intent } = await pendingPaidFlight();
+    await webhook('payment_intent.succeeded', intent).expect(201);
+    const dto = { bookingId: String(draft._id), bookingType: BookingType.FLIGHT, reason: 'PROVIDER_CANCELLATION' as const };
+    await expect(app.get(RefundsService).processRefund(traveler.user.id as string, dto)).rejects.toThrow('Cancel the booking');
+    await expect(app.get(RefundsService).processRefund(String(new Types.ObjectId()), dto)).rejects.toThrow('Booking not found');
+    expect(refundCreate).not.toHaveBeenCalled();
+  });
+
+  it('PAY-03: pending provider refunds reconcile without a second create request', async () => {
+    const { traveler, draft, intent } = await pendingPaidFlight();
+    await webhook('payment_intent.succeeded', intent).expect(201);
+    refundCreate.mockResolvedValueOnce({ id: 're_pending_fixture', status: 'pending' });
+    const cancellation = await post(`/flight-bookings/${draft._id}/cancel`, traveler.cookies).send({}).expect(201);
+    expect(cancellation.body.refundStatus).toBe('PENDING');
+    await app.get(RefundsService).reconcileRefunds();
+    expect((await flightBookings.findById(draft._id))?.refundStatus).toBe('SUCCEEDED');
+    expect(refundCreate).toHaveBeenCalledTimes(1);
+    expect(refundRetrieve).toHaveBeenCalledWith('re_pending_fixture');
+  });
+
+  it('PAY-03: provider errors persist a failed job that can be retried safely', async () => {
+    const { traveler, draft, intent } = await pendingPaidFlight();
+    await webhook('payment_intent.succeeded', intent).expect(201);
+    refundCreate.mockRejectedValueOnce(new Error('offline'));
+    await post(`/flight-bookings/${draft._id}/cancel`, traveler.cookies).send({}).expect(503);
+    expect((await flightBookings.findById(draft._id))?.refundStatus).toBe('FAILED');
+    await app.get(RefundsService).reconcileRefunds();
+    expect((await flightBookings.findById(draft._id))?.refundStatus).toBe('SUCCEEDED');
+    expect(refundCreate.mock.calls[0][1]).toEqual(refundCreate.mock.calls[1][1]);
+  });
+
+  it('PAY-02: returns and stores the owned flight policy snapshot, never hardcoded tiers', async () => {
+    const { traveler, draft } = await pendingPaidFlight();
+    const policies = await get(`/bookings/FLIGHT/${draft._id}/policies`, traveler.cookies).expect(200);
+    expect(policies.body.policies).toMatchObject({
+      cancellationPolicy: { tiers: [{ hoursBeforeDeparture: 48, refundPercentage: 50 }] },
+      baggagePolicy: { legs: [{ extraBaggagePricePerKg: 0, currency: 'USD' }] },
+    });
+    const accepted = await post(`/bookings/FLIGHT/${draft._id}/accept-policies`, traveler.cookies)
+      .send({ accepted: true }).expect(201);
+    expect(accepted.body.accepted).toBe(true);
+    const stored = await app.get<Model<PolicyAcceptance>>(getModelToken(PolicyAcceptance.name))
+      .findOne({ bookingId: String(draft._id), userId: traveler.user._id }).lean();
+    expect(stored?.snapshotPolicies).toEqual(policies.body.policies);
+    const stranger = await account();
+    await get(`/bookings/FLIGHT/${draft._id}/policies`, stranger.cookies).expect(404);
+  });
+
+  it('PAY-02: returns the hotel policy snapshot attached to the booking', async () => {
+    const traveler = await account();
+    const booking = await hotelBooking(traveler.user._id, HotelBookingStatus.PENDING_PAYMENT, 5);
+    await hotelBookings.updateOne({ _id: booking._id }, { $set: { policy: {
+      checkInTime: '16:30', checkOutTime: '10:15', cancellationTiers: [{ daysBefore: 9, refundPercentage: 75 }],
+    } } });
+    const policies = await get(`/bookings/HOTEL/${booking._id}/policies`, traveler.cookies).expect(200);
+    expect(policies.body.policies).toEqual({
+      checkInTime: '16:30', checkOutTime: '10:15',
+      cancellationPolicy: { tiers: [{ daysBefore: 9, refundPercentage: 75 }] },
+    });
+  });
+
+  it('ACC-15: admins verify and deactivate real providers; public search excludes inactive airlines', async () => {
+    const admin = await account(UserRole.ADMIN);
+    const { airline, flight } = await airlineFlight();
+    await airlines.updateOne({ _id: airline._id }, { $set: { verified: false, active: false } });
+    await patch(`/admin/providers/airlines/${airline._id}/verify`, admin.cookies).expect(200);
+    await patch(`/admin/providers/airlines/${airline._id}/reactivate`, admin.cookies).expect(200);
+    expect((await airlines.findById(airline._id))?.toObject()).toMatchObject({ verified: true, active: true });
+    expect((await get('/flights/search?origin=CAI&destination=JFK', admin.cookies)).body.outbound).toHaveLength(1);
+    await patch(`/admin/providers/airlines/${airline._id}/deactivate`, admin.cookies).expect(200);
+    expect((await get('/flights/search?origin=CAI&destination=JFK', admin.cookies)).body.outbound).toHaveLength(0);
+    expect(await flights.exists({ _id: flight._id })).toBeTruthy();
+
+    const hotel = await hotels.create({ name: 'Provider Hotel', description: 'A hotel', city: 'Cairo',
+      country: 'Egypt', address: '1 Nile St', starClass: 4, timeZone: 'Africa/Cairo', active: false, verified: false });
+    await patch(`/admin/providers/hotels/${hotel._id}/verify`, admin.cookies).expect(200);
+    await patch(`/admin/providers/hotels/${hotel._id}/reactivate`, admin.cookies).expect(200);
+    expect((await hotels.findById(hotel._id))?.toObject()).toMatchObject({ verified: true, active: true });
+  });
+
+  it('ACC-12: overlapping deactivation and confirmation cannot both commit', async () => {
+    const { traveler, draft, payment, service } = await pendingPaidFlight();
+    await app.get<Model<Payment>>(getModelToken(Payment.name)).updateOne({ _id: payment._id }, { $set: { status: 'SUCCEEDED' } });
+    const original = users.updateOne.bind(users);
+    let arrivals = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const spy = jest.spyOn(users, 'updateOne').mockImplementation(((...args: Parameters<typeof users.updateOne>) => {
+      const operation = original(...args);
+      if (arrivals >= 2) return operation;
+      arrivals++;
+      if (arrivals === 2) release();
+      return gate.then(() => operation);
+    }) as typeof users.updateOne);
+    try {
+      const results = await Promise.allSettled([
+        service.confirmPayment(String(draft._id), String(payment._id)),
+        app.get(UsersService).deactivate({ id: traveler.user.id as string, name: traveler.user.name, role: UserRole.USER,
+          status: AccountStatus.ACTIVE, mustChangePassword: false, authVersion: 0, sessionId: '' }),
+      ]);
+      expect(arrivals).toBe(2);
+      const accountState = await users.findById(traveler.user._id);
+      const bookingState = await flightBookings.findById(draft._id);
+      expect(accountState?.status === AccountStatus.DEACTIVATED && bookingState?.status === 'CONFIRMED').toBe(false);
+      if (bookingState?.status === 'CONFIRMED') expect(results[1].status).toBe('rejected');
+      else expect(accountState?.status).toBe(AccountStatus.DEACTIVATED);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('ACC-15: overlapping airline deactivation and confirmation cannot both commit', async () => {
+    const admin = await account(UserRole.ADMIN);
+    const { draft, payment, service } = await pendingPaidFlight();
+    const booking = await flightBookings.findById(draft._id).lean();
+    const flight = await flights.findById(booking!.legs[0].flightId).lean();
+    await app.get<Model<Payment>>(getModelToken(Payment.name)).updateOne({ _id: payment._id }, { $set: { status: 'SUCCEEDED' } });
+    const original = airlines.updateOne.bind(airlines);
+    let arrivals = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const spy = jest.spyOn(airlines, 'updateOne').mockImplementation(((...args: Parameters<typeof airlines.updateOne>) => {
+      const operation = original(...args);
+      if (arrivals >= 2) return operation;
+      arrivals++;
+      if (arrivals === 2) release();
+      return gate.then(() => operation);
+    }) as typeof airlines.updateOne);
+    try {
+      await Promise.allSettled([
+        service.confirmPayment(String(draft._id), String(payment._id)),
+        app.get(AdminService).provider({ id: admin.user.id as string, name: admin.user.name, role: UserRole.ADMIN,
+          status: AccountStatus.ACTIVE, mustChangePassword: false, authVersion: 0, sessionId: '' },
+        'AIRLINE', flight!.airlineId.toString(), false),
+      ]);
+      expect(arrivals).toBe(2);
+      const provider = await airlines.findById(flight!.airlineId);
+      const finalBooking = await flightBookings.findById(draft._id);
+      // Confirm-then-deactivate is valid (existing confirmed bookings remain valid). In that
+      // outcome MongoDB must have aborted/retried one callback, proving a serialized order.
+      if (provider?.active === false && finalBooking?.status === 'CONFIRMED') {
+        expect(spy.mock.calls.length).toBeGreaterThan(2);
+      } else {
+        expect(finalBooking?.status).not.toBe('CONFIRMED');
+        expect(provider?.active).toBe(false);
+      }
+    } finally { spy.mockRestore(); }
   });
 
   it('ACC-12: blocks deactivation while an upcoming confirmed hotel stay exists', async () => {

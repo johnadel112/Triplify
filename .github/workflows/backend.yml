@@ -1,14 +1,22 @@
 name: Backend CI
 on:
   push:
-    branches: [main, feature/john-auth-admin]
+    branches: [main, develop, feature/john-auth-admin]
   pull_request:
-    branches: [main]
+    branches: [main, develop, feature/john-auth-admin]
 permissions:
   contents: read
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      MONGOMS_VERSION: '7.0.24'
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/mongodb-binaries
     defaults:
       run:
         working-directory: backend
@@ -19,6 +27,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: .cache/mongodb-binaries
+          key: mongodb-${{ runner.os }}-7.0.24
       - run: npm ci
       - run: npm run lint
       - run: npm run build

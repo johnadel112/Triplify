@@ -33,6 +33,12 @@ export interface AdminBookingReaderPort {
 }
 export interface ProviderManagementPort {
   verifyProvider(type: ProviderType, id: string, transaction: ClientSession): Promise<boolean>;
+  setProviderVerified(
+    type: ProviderType,
+    id: string,
+    verified: boolean,
+    transaction: ClientSession,
+  ): Promise<void>;
   // Update actual provider data in this transaction. Reject invalid transitions.
   setProviderActive(
     type: ProviderType,

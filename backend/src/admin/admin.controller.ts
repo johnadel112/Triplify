@@ -87,6 +87,12 @@ export class AdminController {
     return this.admin.provider(actor, 'HOTEL', id, false);
   }
 
+  @Patch('providers/hotels/:id/verify')
+  @ApiOperation({ summary: 'Verify an actual hotel provider' })
+  verifyHotel(@CurrentUser() actor: Principal, @Param('id', ObjectIdPipe) id: string) {
+    return this.admin.verifyProvider(actor, 'HOTEL', id);
+  }
+
   @Patch('providers/hotels/:id/reactivate')
   @ApiOperation({ summary: 'Reactivate actual hotel through provider adapter' })
   reactivateHotel(@CurrentUser() actor: Principal, @Param('id', ObjectIdPipe) id: string) {
@@ -97,6 +103,12 @@ export class AdminController {
   @ApiOperation({ summary: 'Deactivate actual airline through provider adapter' })
   deactivateAirline(@CurrentUser() actor: Principal, @Param('id', ObjectIdPipe) id: string) {
     return this.admin.provider(actor, 'AIRLINE', id, false);
+  }
+
+  @Patch('providers/airlines/:id/verify')
+  @ApiOperation({ summary: 'Verify an actual airline provider' })
+  verifyAirline(@CurrentUser() actor: Principal, @Param('id', ObjectIdPipe) id: string) {
+    return this.admin.verifyProvider(actor, 'AIRLINE', id);
   }
 
   @Patch('providers/airlines/:id/reactivate')

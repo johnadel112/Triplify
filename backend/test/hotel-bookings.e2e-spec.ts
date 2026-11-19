@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { signedEvent, webhookTestSecret } from './stripe-test-signature';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
@@ -103,7 +104,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
     rooms: [{ roomId, adults }],
   });
 
-  /** Simulates Divan's flow: a payment row plus the (unsigned, test-mode) Stripe webhook. */
+  /** Local payment fixture plus a cryptographically signed test webhook; no Stripe network call. */
   async function pay(actor: Actor, bookingId: string, amount: number) {
     const intentId = `pi_test_${new Types.ObjectId().toString()}`;
     await payments.create({
@@ -117,9 +118,15 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       policyAccepted: true,
       policyAcceptedAt: now,
     });
+    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: {
+      id: intentId, status: 'succeeded', amount_received: Math.round(amount * 100), currency: 'usd',
+      metadata: { bookingId, bookingType: 'HOTEL', userId: actor.user._id.toString() },
+    } } });
     await request(server())
       .post('/api/payments/webhook')
-      .send({ type: 'payment_intent.succeeded', data: { object: { id: intentId } } })
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', signed.signature)
+      .send(signed.payload)
       .expect(201);
   }
   async function confirmedBooking(actor: Actor, roomId: string, from: number, to: number) {
@@ -140,6 +147,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
+    process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CLOCK)
@@ -153,7 +161,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       .overrideProvider(PROVIDER_MANAGEMENT)
       .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication({ rawBody: true });
     app.useLogger(false);
     configureApp(app);
     await app.init();
@@ -179,7 +187,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.deleteMany({})));
     now = new Date();
-    stripeRefundCreate.mockReset().mockResolvedValue({ id: 're_test_offline' });
+    stripeRefundCreate.mockReset().mockResolvedValue({ id: 're_test_offline', status: 'succeeded' });
     const tiers = [
       { daysBefore: 7, refundPercentage: 100 },
       { daysBefore: 2, refundPercentage: 50 },
@@ -598,7 +606,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       status: 'CANCELLED',
       cancellation: { refundPercentage: 100, refundAmount: '200.00', refundStatus: 'SUCCEEDED' },
     });
-    expect(stripeRefundCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 20000 }));
+    expect(stripeRefundCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 20000 }), expect.objectContaining({ idempotencyKey: expect.any(String) }));
     expect((await payments.findOne({ bookingId: booking.id }))!.status).toBe('REFUNDED');
     expect(
       await notifications.countDocuments({ userId: traveler.user._id, type: 'BOOKING_CANCELLED' }),
@@ -646,12 +654,12 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
     const traveler = await account();
     const booking = await confirmedBooking(traveler, roomA, 10, 11);
     stripeRefundCreate.mockRejectedValue(new Error('offline'));
-    // Divan's RefundsService falls back to a simulated refund id when Stripe is unreachable.
     const cancelled = await post(`/hotel-bookings/${booking.id}/cancel`, traveler.cookies)
       .send({ confirmation: true })
       .expect(200);
     expect(cancelled.body.status).toBe('CANCELLED');
-    expect(['SUCCEEDED', 'FAILED']).toContain(cancelled.body.cancellation.refundStatus);
+    expect(cancelled.body.cancellation.refundStatus).toBe('FAILED');
+    expect(await refundsModel.countDocuments({ bookingId: booking.id, status: 'FAILED' })).toBe(1);
   });
 
   // ------------------------------------------------------------------ HTL-23 / HTL-24

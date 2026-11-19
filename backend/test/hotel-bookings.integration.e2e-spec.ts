@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { signedEvent, webhookTestSecret } from './stripe-test-signature';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
@@ -122,6 +123,7 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
+    process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
     const { AppModule } = await import('../src/app.module');
     // Only the clock and the unrelated cross-team adapters are replaced; HOTEL_INVENTORY is real.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -134,7 +136,7 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
       .overrideProvider(PROVIDER_MANAGEMENT)
       .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication({ rawBody: true });
     app.useLogger(false);
     configureApp(app);
     await app.init();
@@ -142,7 +144,7 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
     payments = app.get(getModelToken(Payment.name));
     locks = app.get(getModelToken(RoomNightLock.name));
     Object.assign(app.get(RefundsService) as unknown as Record<string, unknown>, {
-      stripe: { refunds: { create: jest.fn().mockResolvedValue({ id: 're_test_offline' }) } },
+      stripe: { refunds: { create: jest.fn().mockResolvedValue({ id: 're_test_offline', status: 'succeeded' }) } },
     });
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.init()));
@@ -219,9 +221,15 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
       policyAccepted: true,
       policyAcceptedAt: now,
     });
+    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: {
+      id: intentId, status: 'succeeded', amount_received: 50100, currency: 'usd',
+      metadata: { bookingId: held.body.id, bookingType: 'HOTEL', userId: traveler.user._id.toString() },
+    } } });
     await request(server())
       .post('/api/payments/webhook')
-      .send({ type: 'payment_intent.succeeded', data: { object: { id: intentId } } })
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', signed.signature)
+      .send(signed.payload)
       .expect(201);
     const confirmed = await post(
       `/hotel-bookings/${held.body.id}/confirm`,

@@ -17,13 +17,13 @@ export class FlightsController {
   @Patch('airline-profile')
   @Roles(UserRole.AIRLINE_MODERATOR)
   async updateProfile(@CurrentUser() user: Principal, @Body() dto: AirlineProfileDto) {
-    return this.flightsService.updateAirlineProfile(user.id, dto);
+    return this.flightsService.updateAirlineProfile(user.id, user.providerId!, dto);
   }
 
   @Post()
   @Roles(UserRole.AIRLINE_MODERATOR)
   async createFlight(@CurrentUser() user: Principal, @Body() dto: CreateFlightDto) {
-    return this.flightsService.createFlight(user.id, dto);
+    return this.flightsService.createFlight(user.providerId!, dto);
   }
 
   @Get('search')
@@ -45,6 +45,6 @@ export class FlightsController {
     @Param('id', ObjectIdPipe) id: string,
     @Body() dto: UpdateFlightDto,
   ) {
-    return this.flightsService.updateFlight(id, user.id, dto);
+    return this.flightsService.updateFlight(id, user.providerId!, dto, user.id);
   }
 }

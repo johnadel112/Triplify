@@ -7,7 +7,7 @@ import { Connection, Model, Types } from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
-import { UserRole } from '../src/common/domain';
+import { AccountStatus, UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
 import { PROVIDER_MANAGEMENT } from '../src/integrations/contracts';
 import { configureApp } from '../src/bootstrap';
@@ -160,6 +160,35 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     expect(await comments.countDocuments({ postId: spam._id })).toBe(0);
     expect(await likes.countDocuments({ postId: spam._id })).toBe(0);
     await del(`/admin/content/POST/${spam.id as string}`, admin.cookies).expect(404);
+  });
+
+  it('BLG-05: publicly lists only visible comments with stable pagination and safe authors', async () => {
+    const author = await account();
+    const deactivated = await account();
+    const postDoc = await publishedPost(author.user._id);
+    await users.updateOne({ _id: deactivated.user._id }, { $set: { status: AccountStatus.DEACTIVATED } });
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      postId: postDoc._id,
+      userId: index === 11 ? deactivated.user._id : author.user._id,
+      content: `visible-${index}`,
+      createdAt: new Date(Date.now() + index * 1000),
+      updatedAt: new Date(Date.now() + index * 1000),
+    }));
+    await comments.insertMany(rows);
+    await comments.create({ postId: postDoc._id, userId: author.user._id, content: 'hidden', hidden: true });
+    const deleted = await comments.create({ postId: postDoc._id, userId: author.user._id, content: 'deleted' });
+    await comments.deleteOne({ _id: deleted._id });
+
+    const first = await get(`/blog/posts/${postDoc._id}/comments?page=1`).expect(200);
+    const second = await get(`/blog/posts/${postDoc._id}/comments?page=2`).expect(200);
+    expect(first.body).toMatchObject({ total: 12, page: 1, pageCount: 2 });
+    expect(first.body.items).toHaveLength(10);
+    expect(second.body.items).toHaveLength(2);
+    expect(first.body.items[0]).toMatchObject({ content: 'visible-11', author: { name: 'Deleted user' } });
+    expect(JSON.stringify([first.body, second.body])).not.toContain('hidden');
+    expect(JSON.stringify([first.body, second.body])).not.toContain('deleted');
+    await posts.updateOne({ _id: postDoc._id }, { $set: { hidden: true } });
+    await get(`/blog/posts/${postDoc._id}/comments`).expect(404);
   });
 
   it('hiding a review removes it from hotel reviews and the average rating', async () => {

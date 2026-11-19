@@ -33,6 +33,12 @@ export class Hotel {
   @Prop({ type: Boolean, default: true })
   active!: boolean;
 
+  @Prop({ type: Boolean, default: true, index: true })
+  verified!: boolean;
+
+  @Prop({ type: Number, default: 0, select: false })
+  bookingRevision!: number;
+
   @Prop({ type: Number, default: 0, min: 0, max: 5 })
   rating!: number;
 

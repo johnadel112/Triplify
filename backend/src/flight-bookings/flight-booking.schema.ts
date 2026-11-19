@@ -51,6 +51,8 @@ export class FlightBooking {
   @Prop({ type: Date }) confirmedAt?: Date;
   @Prop({ type: Date }) cancelledAt?: Date;
   @Prop({ type: Number }) refundAmount?: number;
+  @Prop({ enum: ['NOT_APPLICABLE', 'PENDING', 'SUCCEEDED', 'FAILED'] }) refundStatus?: string;
+  @Prop() refundId?: string;
 }
 export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);
 FlightBookingSchema.index({ status: 1, holdExpiresAt: 1 });

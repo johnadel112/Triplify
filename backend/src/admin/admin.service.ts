@@ -173,6 +173,13 @@ export class AdminService {
     });
     return { success: true, notificationStatus: 'PENDING_INTEGRATION' };
   }
+  async verifyProvider(actor: Principal, type: ProviderType, id: string) {
+    await this.db.transaction(async (transaction) => {
+      await this.providers.setProviderVerified(type, id, true, transaction);
+      await this.audit.record(actor.id, 'PROVIDER_VERIFIED', id, type, transaction, 'UNVERIFIED', 'VERIFIED');
+    });
+    return { success: true, verified: true, notificationStatus: 'PENDING_INTEGRATION' };
+  }
   findBookings(filters: BookingFilters) {
     if (
       filters.startDate &&

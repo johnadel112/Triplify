@@ -11,7 +11,8 @@
     "test": "jest --runInBand",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "seed:admin": "ts-node scripts/seed-admin.ts",
-    "seed:reference": "ts-node scripts/seed-reference.ts"
+    "seed:reference": "ts-node scripts/seed-reference.ts",
+    "migrate:flight-airlines": "ts-node scripts/migrate-flight-airline-ids.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
