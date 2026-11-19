@@ -39,10 +39,10 @@ describe('Payment provider failures and server pricing', () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['error', 'pending', 'failed'])('does not claim refund success when provider returns %s', async (status) => {
+  it.each(['error', 'pending', 'failed', 'stale'])('does not claim refund success for provider result/job %s', async (status) => {
     const payment = { id: 'payment', amount: 100, currency: 'USD', userId: new Types.ObjectId(userId), stripePaymentIntentId: 'pi_test', status: PaymentStatus.SUCCEEDED, save: jest.fn() };
     const findOne = jest.fn().mockResolvedValue(payment);
-    const refund = { _id: new Types.ObjectId(), id: new Types.ObjectId().toString(), amount: 100, status: 'PENDING', createdAt: new Date() };
+    const refund = { _id: new Types.ObjectId(), id: new Types.ObjectId().toString(), amount: 100, status: 'PENDING', createdAt: status === 'stale' ? new Date(0) : new Date() };
     const updateOne = jest.fn().mockImplementation(async (_filter, update: { $set: object }) => { Object.assign(refund, update.$set); });
     const refundModel = { findOne: jest.fn().mockResolvedValue(refund), updateOne, findById: jest.fn().mockResolvedValue(refund) };
     const service = new RefundsService(
@@ -53,11 +53,15 @@ describe('Payment provider failures and server pricing', () => {
     const create = status === 'error' ? jest.fn().mockRejectedValue(new Error('offline')) : jest.fn().mockResolvedValue({ id: 're_provider', status });
     Object.assign(service, { stripe: { refunds: { create } } });
     const result = service.processRefund(userId, { bookingId, bookingType: BookingType.FLIGHT, reason: 'USER_CANCELLATION', daysBefore: 10 }, [{ daysBefore: 0, refundPercentage: 100 }]);
-    if (status === 'error') await expect(result).rejects.toThrow('Refund provider has not confirmed');
+    if (status === 'error' || status === 'stale') await expect(result).rejects.toThrow('Refund provider has not confirmed');
     else await expect(result).resolves.toMatchObject({ status: status.toUpperCase() });
     expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ userId: new Types.ObjectId(userId) }));
     expect(refund.status).not.toBe('SUCCEEDED');
     expect(payment.save).not.toHaveBeenCalled();
     expect(payment.status).toBe(PaymentStatus.SUCCEEDED);
+    if (status === 'stale') {
+      expect(create).not.toHaveBeenCalled();
+      expect(refund).toMatchObject({ errorMessage: 'MANUAL_PROVIDER_RECONCILIATION_REQUIRED' });
+    }
   });
 });

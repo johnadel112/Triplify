@@ -103,8 +103,9 @@ export class RefundsService {
     if (refund.amount !== refundAmount) throw new ConflictException('An existing refund has a different amount');
 
     if (refund.status !== RefundStatus.SUCCEEDED) {
+    const needsManualReview = !refund.stripeRefundId && Date.now() - refund.createdAt.getTime() > 23 * 60 * 60 * 1000;
     try {
-      if (!refund.stripeRefundId && Date.now() - refund.createdAt.getTime() > 23 * 60 * 60 * 1000) {
+      if (needsManualReview) {
         throw new ServiceUnavailableException('Manual provider reconciliation required before retrying an old refund');
       }
       const stripeRefund = refund.stripeRefundId ? await this.stripe.refunds.retrieve(refund.stripeRefundId) : await this.stripe.refunds.create({
@@ -119,7 +120,7 @@ export class RefundsService {
       });
     } catch {
       await this.refundModel.updateOne({ _id: refund._id, status: { $ne: RefundStatus.SUCCEEDED } }, {
-        $set: { status: RefundStatus.FAILED, errorMessage: 'Provider request failed; retry with the same idempotency key' },
+        $set: { status: RefundStatus.FAILED, errorMessage: needsManualReview ? 'MANUAL_PROVIDER_RECONCILIATION_REQUIRED' : 'Provider request failed; retry with the same idempotency key' },
       });
       const current = await this.refundModel.findById(refund._id);
       if (current?.status === RefundStatus.SUCCEEDED) return this.processRefund(userId, dto);
@@ -167,7 +168,7 @@ export class RefundsService {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async reconcileRefunds() {
-    const jobs = await this.refundModel.find({ settled: { $ne: true } }).limit(100).lean();
+    const jobs = await this.refundModel.find({ settled: { $ne: true }, errorMessage: { $ne: 'MANUAL_PROVIDER_RECONCILIATION_REQUIRED' } }).limit(100).lean();
     for (const job of jobs) {
       try {
         await this.processRefund(job.userId.toString(), { bookingId: job.bookingId, bookingType: job.bookingType, reason: job.reason });
