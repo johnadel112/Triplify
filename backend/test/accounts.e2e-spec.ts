@@ -69,7 +69,7 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CLOCK)
       .useValue({ now: () => new Date(now) })

@@ -124,7 +124,7 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     // Only the clock and the unrelated cross-team adapters are replaced; HOTEL_INVENTORY is real.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CLOCK)

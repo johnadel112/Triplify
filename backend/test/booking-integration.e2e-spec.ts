@@ -165,7 +165,7 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     // Booking and provider integration adapters are real in this suite.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication({ rawBody: true });

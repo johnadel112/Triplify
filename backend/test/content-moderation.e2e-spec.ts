@@ -85,7 +85,7 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PROVIDER_MANAGEMENT)
       .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
