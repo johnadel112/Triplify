@@ -67,6 +67,25 @@ Triplify is developed collaboratively by a team of seven members:
 
 Our vision is to make travel planning more accessible, organized, and enjoyable by combining travel discovery, booking, and itinerary management into one integrated digital platform.
 
+## Milestone 1 backend
+
+The submission backend is in `backend/` and uses NestJS, TypeScript and MongoDB/Mongoose. It includes the integrated REST APIs for accounts and administration, providers, flights and hotels, bookings, Stripe payment/refund workflows, notifications, blog moderation and itineraries.
+
+```powershell
+cd backend
+npm.cmd ci
+Copy-Item .env.example .env
+# Supply protected local values; never commit .env.
+npm.cmd run lint
+npm.cmd run build
+npm.cmd test -- --runInBand
+npm.cmd run test:e2e -- --runInBand
+```
+
+Development Swagger is served at `http://localhost:3000/api/docs`, with JSON at `/api/docs-json`. See [backend setup](backend/README.md), [API contract](backend/docs/API.md), [integration workflow](docs/INTEGRATION_WORKFLOW.md), and [finalization status](docs/FINALIZATION_STATUS.md).
+
+MongoDB Atlas is supported through `MONGODB_URI`; booking, payment, provider and account consistency flows require transactions and therefore a replica set. Atlas credentials are not stored in this repository. The Next.js draft is isolated from the Milestone 1 backend branch and remains Milestone 2 work.
+
 ---
 
 **Triplify — Your Journey, Simplified.**

@@ -1,6 +1,6 @@
 # Team integration contract
 
-The production default implementations in `src/integrations/integrations.module.ts` throw HTTP 503 `INTEGRATION_UNAVAILABLE`. They never synthesize bookings, accept arbitrary provider IDs, or treat outages as an absence of bookings. Tests override Nest tokens only inside the testing module. Replace the defaults with exported real adapters after importing the owning modules. The application uses one MongoDB connection and transactions; Atlas or another replica set is required.
+The production implementations in `src/integrations/integrations.module.ts` connect the account/admin contracts to real hotel and flight adapters. They never synthesize bookings, accept arbitrary provider IDs, or treat outages as an absence of bookings. Tests may override Nest tokens only inside the testing module. The application uses one MongoDB connection and transactions; Atlas or another replica set is required.
 
 ## Zeyad: flight bookings; Youssef: hotel reservations
 

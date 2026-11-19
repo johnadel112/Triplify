@@ -31,7 +31,7 @@ export function configureApp(app: INestApplication) {
         .setTitle('Triplify API')
         .setVersion('1.0')
         .setDescription(
-          'Cookie authentication. Mutations require trusted Origin and X-Triplify-CSRF: 1. Errors contain statusCode, code, message and optional fields. Missing teammate adapters return 503.',
+          'Cookie authentication. Mutations require trusted Origin and X-Triplify-CSRF: 1. Errors contain statusCode, code, message and optional fields. External provider failures fail closed.',
         )
         .addCookieAuth('access_token')
         .build(),

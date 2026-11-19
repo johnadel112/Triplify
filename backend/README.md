@@ -1,6 +1,6 @@
 # Triplify backend
 
-NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. Scope: John's accounts/admin foundation. Missing teammate integrations fail closed with 503; notification events persist pending delivery. Email verification, SMTP, public email reset and analytics are intentionally excluded.
+NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Email verification, SMTP, public email reset and analytics are intentionally excluded.
 
 ## Run locally
 
