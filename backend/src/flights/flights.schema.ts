@@ -3,8 +3,9 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class AirlineProfile extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
-  moderatorId!: Types.ObjectId;
+  /** Set when the assigned moderator first manages the profile; an admin creates airlines first (FLT-01). */
+  @Prop({ type: Types.ObjectId, ref: 'User', unique: true, sparse: true })
+  moderatorId?: Types.ObjectId;
 
   @Prop({ type: String, required: true })
   name!: string;

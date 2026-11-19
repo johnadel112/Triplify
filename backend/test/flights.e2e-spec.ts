@@ -11,7 +11,6 @@ import { UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
 import { Airport } from '../src/reference-data/reference.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
-import { BOOKING_ACCESS, BOOKING_READER, PROVIDER_MANAGEMENT } from '../src/integrations/contracts';
 import { configureApp } from '../src/bootstrap';
 
 /** Flight management and search (FLT-01, FLT-03..05, FLT-11) request validation. */
@@ -45,7 +44,11 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
       providerType: 'AIRLINE',
     });
     await app.get<Model<AirlineProfile>>(getModelToken(AirlineProfile.name)).create({
-      _id: providerId, moderatorId: user._id, name: 'Fixture Air', active: true, verified: true,
+      _id: providerId,
+      moderatorId: user._id,
+      name: 'Fixture Air',
+      active: true,
+      verified: true,
     });
     const response = await post('/auth/login').send({ email: user.email, password });
     expect(response.status).toBe(200);
@@ -74,14 +77,7 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     const { AppModule } = await import('../src/app.module');
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(BOOKING_ACCESS)
-      .useValue({ hasUpcomingConfirmedBookings: jest.fn() })
-      .overrideProvider(BOOKING_READER)
-      .useValue({ findBookings: jest.fn() })
-      .overrideProvider(PROVIDER_MANAGEMENT)
-      .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
-      .compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.useLogger(false);
     configureApp(app);
@@ -197,5 +193,60 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     await get('/flights/search?origin=CAI').expect(400);
     await get('/flights/search?origin=CAI&destination=JFK&passengers=0').expect(400);
     await get(`/flights/${new Types.ObjectId().toString()}`).expect(404);
+  });
+
+  it('FLT-01: admin creates an airline, then its moderator manages it and adds flights', async () => {
+    const admin = await users.create({
+      name: 'Admin',
+      email: `${new Types.ObjectId().toString()}@example.com`,
+      passwordHash,
+      role: UserRole.ADMIN,
+    });
+    const adminLogin = await post('/auth/login').send({ email: admin.email, password });
+    const adminCookies = (adminLogin.headers['set-cookie'] as unknown as string[]).map(
+      (v) => v.split(';')[0],
+    );
+
+    const airline = await post('/airlines', adminCookies).send({ name: 'Nile Air' }).expect(201);
+    expect(airline.body).toMatchObject({ name: 'Nile Air', active: true });
+    await get(`/airlines/${airline.body.id as string}`).expect(200);
+    await post('/airlines', adminCookies).send({}).expect(400);
+    await post('/airlines').send({ name: 'Anon Air' }).expect(401);
+
+    const email = `${new Types.ObjectId().toString()}@example.com`;
+    await post('/admin/moderators', adminCookies)
+      .send({
+        name: 'Nile Moderator',
+        email,
+        password: 'TempPass123',
+        role: 'AIRLINE_MODERATOR',
+        providerId: airline.body.id,
+      })
+      .expect(201);
+
+    // First login with the temporary password must change it before anything else.
+    const first = await post('/auth/login').send({ email, password: 'TempPass123' });
+    const tempCookies = (first.headers['set-cookie'] as unknown as string[]).map(
+      (v) => v.split(';')[0],
+    );
+    await patch('/users/me/password', tempCookies)
+      .send({ currentPassword: 'TempPass123', newPassword: 'NewPass12345' })
+      .expect(200);
+    const login = await post('/auth/login').send({ email, password: 'NewPass12345' });
+    const cookies = (login.headers['set-cookie'] as unknown as string[]).map(
+      (v) => v.split(';')[0],
+    );
+
+    const profile = await patch('/flights/airline-profile', cookies)
+      .send({ contactEmail: 'ops@nile.example.com' })
+      .expect(200);
+    expect(profile.body).toMatchObject({ name: 'Nile Air', contactEmail: 'ops@nile.example.com' });
+    const flight = await post('/flights', cookies).send(validFlight()).expect(201);
+    expect(String(flight.body.airlineId)).toBe(airline.body.id);
+
+    // Another airline's moderator cannot take this profile.
+    const other = await moderator();
+    await patch('/flights/airline-profile', other.cookies).send({ name: 'Mine' }).expect(200);
+    expect((await get(`/airlines/${airline.body.id as string}`)).body.name).toBe('Nile Air');
   });
 });
