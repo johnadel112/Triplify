@@ -6,6 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Payment, PolicyAcceptance } from './payments.schema';
 import { PaymentsService } from './payments.service';
 import { BookingPaymentSource } from './booking-payment-source';
+import { FlightBookingsService } from '../flight-bookings/flight-bookings.service';
 
 describe('Stripe webhook authentication (PAY-01)', () => {
   const secret = 'whsec_unit_test_only';
@@ -18,6 +19,7 @@ describe('Stripe webhook authentication (PAY-01)', () => {
     new ConfigService({ STRIPE_SECRET_KEY: 'sk_test_unit_test_only', ...(configured ? { STRIPE_WEBHOOK_SECRET: secret } : {}) }),
     { createNotification: jest.fn() } as unknown as NotificationsService,
     {} as BookingPaymentSource,
+    {} as FlightBookingsService,
   );
   const signature = (body = payload, timestamp?: number) => stripe.webhooks.generateTestHeaderString({ payload: body, secret, timestamp });
 

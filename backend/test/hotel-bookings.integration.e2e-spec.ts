@@ -221,7 +221,10 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
       policyAccepted: true,
       policyAcceptedAt: now,
     });
-    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: { id: intentId } } });
+    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: {
+      id: intentId, status: 'succeeded', amount_received: 50100, currency: 'usd',
+      metadata: { bookingId: held.body.id, bookingType: 'HOTEL', userId: traveler.user._id.toString() },
+    } } });
     await request(server())
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')

@@ -98,8 +98,14 @@ export class Refund extends Document {
   @Prop({ required: true, default: PLATFORM_CURRENCY })
   currency!: string;
 
-  @Prop({ required: true })
-  stripeRefundId!: string;
+  @Prop()
+  stripeRefundId?: string;
+
+  @Prop({ default: false })
+  settled!: boolean;
+
+  @Prop()
+  errorMessage?: string;
 
   @Prop({ required: true, enum: ['USER_CANCELLATION', 'PROVIDER_CANCELLATION'] })
   reason!: 'USER_CANCELLATION' | 'PROVIDER_CANCELLATION';
@@ -110,7 +116,7 @@ export class Refund extends Document {
   @Prop({
     required: true,
     enum: Object.values(RefundStatus),
-    default: RefundStatus.SUCCEEDED,
+    default: RefundStatus.PENDING,
   })
   status!: RefundStatus;
 

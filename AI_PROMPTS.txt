@@ -192,3 +192,15 @@ How the output was used:
 Fetched integration history and audited payment/booking code. Added FINALIZATION_STATUS.md. Required signed raw Stripe webhooks, removed fabricated intent/refund fallbacks, scoped refund payment lookup to its owner, and read authoritative flight/hotel prices and hold validity for payment creation/retry. Added booking-specific Stripe creation idempotency key. Added unit and HTTP signature/provider-failure tests and converted existing hotel webhook fixtures to signed local payloads. These tests mock Stripe API calls; no real Stripe or Atlas verification is claimed. Flight confirmation/refund lifecycle integration remains outstanding.
 Reference documentation checked: https://docs.nestjs.com/faq/raw-body and https://docs.stripe.com/webhooks/signature
 ================================================
+
+================================================
+Date: 2026-11-19
+Contributor: Codex, at repository user's request
+Tool: OpenAI Codex
+Related Requirement: FLT-23, FLT-26, PAY-01, PAY-03, ACC-12, GEN-01
+Prompt (excerpt from the supplied finalization request):
+"Connect successful, verified payment processing to flight booking confirmation"; "Register and inject a working refund adapter"; "Ensure flight confirmation serializes correctly with account deactivation"; "Add meaningful automated tests for every repaired feature."
+How the output was used:
+Connected verified Stripe events to transactional flight confirmation; verified amount/currency/metadata and payment ownership; added active-account coordination writes and atomic confirmation notifications. Added payment creation deduplication and monotonic webhook status changes. Registered the refund adapter using a shared RefundsModule. Refund eligibility and amounts now come from persisted booking cancellation records. Refund jobs, failure states, stable provider retry keys, pending-status reconciliation and deduplicated notifications are persisted. Added replica-set concurrency, signed HTTP lifecycle, refund ownership, spoofed-policy, pending and failure-recovery tests. Removed invented default refund tiers. No production data migration or real Stripe/Atlas operation was performed.
+Validation at this point: lint/build pass; 107 unit tests and 85 e2e tests pass. A temporary intermediate return-type error and an incomplete currency fixture were corrected before these passes.
+================================================

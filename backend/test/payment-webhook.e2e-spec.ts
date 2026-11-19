@@ -9,6 +9,7 @@ import { PaymentsService } from '../src/payments/payments.service';
 import { Payment, PolicyAcceptance } from '../src/payments/payments.schema';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { BookingPaymentSource } from '../src/payments/booking-payment-source';
+import { FlightBookingsService } from '../src/flight-bookings/flight-bookings.service';
 
 // Real HTTP parsing and Stripe signature verification; persistence is explicitly mocked.
 describe('Payment webhook raw-body transport (PAY-01)', () => {
@@ -22,7 +23,7 @@ describe('Payment webhook raw-body transport (PAY-01)', () => {
       providers: [{ provide: PaymentsService, useValue: new PaymentsService(
         { findOne } as unknown as Model<Payment>, {} as Model<PolicyAcceptance>,
         new ConfigService({ STRIPE_SECRET_KEY: 'sk_test_http_test_only', STRIPE_WEBHOOK_SECRET: secret }),
-        {} as NotificationsService, {} as BookingPaymentSource,
+        {} as NotificationsService, {} as BookingPaymentSource, {} as FlightBookingsService,
       ) }],
     }).compile();
     app = module.createNestApplication({ rawBody: true });

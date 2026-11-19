@@ -9,9 +9,12 @@ import { MongooseModule, getModelToken } from '@nestjs/mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Model, Types } from 'mongoose';
 import { FlightBookingsModule } from './flight-bookings.module';
-import { FlightBookingsService } from './flight-bookings.service';
+import { FlightBookingsService, REFUNDS_PORT } from './flight-bookings.service';
 import { Flight } from '../flights/flights.schema';
 import { FlightBooking } from './flight-booking.schema';
+import { User } from '../users/user.schema';
+import { Payment } from '../payments/payments.schema';
+import { Notification } from '../notifications/notifications.schema';
 
 jest.setTimeout(600_000);
 
@@ -20,17 +23,23 @@ describe('flight booking concurrency', () => {
   let service: FlightBookingsService;
   let flights: Model<Flight>;
   let bookings: Model<FlightBooking>;
+  let users: Model<User>;
+  let payments: Model<Payment>;
+  let notifications: Model<Notification>;
   let close: () => Promise<void>;
 
   beforeAll(async () => {
     repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     const mod = await Test.createTestingModule({
       imports: [MongooseModule.forRoot(repl.getUri()), FlightBookingsModule],
-    }).compile();
+    }).overrideProvider(REFUNDS_PORT).useValue({ requestRefund: jest.fn().mockResolvedValue(undefined) }).compile();
     await mod.init();
     service = mod.get(FlightBookingsService);
     flights = mod.get(getModelToken(Flight.name));
     bookings = mod.get(getModelToken(FlightBooking.name));
+    users = mod.get(getModelToken(User.name));
+    payments = mod.get(getModelToken(Payment.name));
+    notifications = mod.get(getModelToken(Notification.name));
     close = async () => {
       await mod.close();
       await repl.stop();
@@ -66,6 +75,16 @@ describe('flight booking concurrency', () => {
     passengers: [passenger],
   });
 
+  async function paidHold() {
+    const flight = await newFlight(1);
+    const user = await users.create({ name: 'Traveler', email: `${new Types.ObjectId()}@example.test`, passwordHash: 'test-only' });
+    const draft = await service.createDraft(String(user._id), dtoFor(flight._id));
+    await service.hold(String(user._id), String(draft._id));
+    const payment = await payments.create({ bookingId: String(draft._id), bookingType: 'FLIGHT', userId: user._id,
+      amount: 100, currency: 'USD', status: 'SUCCEEDED', stripePaymentIntentId: `pi_${draft._id}`, stripeClientSecret: 'test-only' });
+    return { flight, user, draft, payment };
+  }
+
   it('only one of two users gets the last seat, and expiry releases it exactly once', async () => {
     const flight = await newFlight(1);
     const dto = dtoFor(flight._id);
@@ -87,11 +106,9 @@ describe('flight booking concurrency', () => {
   });
 
   it('cancelling the same confirmed booking twice releases the seat only once', async () => {
-    const flight = await newFlight(1);
-    const user = String(new Types.ObjectId());
-    const draft = await service.createDraft(user, dtoFor(flight._id));
-    await service.hold(user, String(draft._id));
-    const res = await service.confirmPayment(String(draft._id), String(new Types.ObjectId()));
+    const { flight, user: account, draft, payment } = await paidHold();
+    const user = String(account._id);
+    const res = await service.confirmPayment(String(draft._id), String(payment._id));
     expect(res.confirmed).toBe(true);
     expect(await seats(flight._id)).toBe(0);
 
@@ -101,5 +118,39 @@ describe('flight booking concurrency', () => {
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(await seats(flight._id)).toBe(1);
+  });
+
+  it('concurrent duplicate confirmations persist one notification and keep the held seat', async () => {
+    const { draft, payment, flight } = await paidHold();
+    const results = await Promise.all([service.confirmPayment(String(draft._id), String(payment._id)), service.confirmPayment(String(draft._id), String(payment._id))]);
+    expect(results.every(r => r.confirmed)).toBe(true);
+    expect(await notifications.countDocuments({ 'metadata.bookingId': String(draft._id) })).toBe(1);
+    expect(await seats(flight._id)).toBe(0);
+  });
+
+  it('rejects failed and mismatched payments without confirming', async () => {
+    const { draft, payment } = await paidHold();
+    for (const change of [{ status: 'FAILED' }, { status: 'SUCCEEDED', amount: 1 }, { amount: 100, userId: new Types.ObjectId() }]) {
+      await payments.updateOne({ _id: payment._id }, { $set: change });
+      await expect(service.confirmPayment(String(draft._id), String(payment._id))).rejects.toThrow('Payment is not verified');
+    }
+    expect((await bookings.findById(draft._id))?.status).toBe('PENDING');
+  });
+
+  it('an expired hold cannot be confirmed while concurrent expiry releases seats once', async () => {
+    const { draft, payment, flight } = await paidHold();
+    await bookings.updateOne({ _id: draft._id }, { $set: { holdExpiresAt: new Date(0) } });
+    const [result] = await Promise.all([
+      service.confirmPayment(String(draft._id), String(payment._id)), service.expireOne(draft._id), service.expireOne(draft._id),
+    ]);
+    expect(result.confirmed).toBe(false);
+    expect((await bookings.findById(draft._id))?.status).toBe('EXPIRED');
+    expect(await seats(flight._id)).toBe(1);
+  });
+
+  it('inactive accounts cannot confirm a paid hold', async () => {
+    const { draft, payment, user } = await paidHold();
+    await users.updateOne({ _id: user._id }, { $set: { status: 'DEACTIVATED' } });
+    await expect(service.confirmPayment(String(draft._id), String(payment._id))).resolves.toMatchObject({ confirmed: false, reason: 'ACCOUNT_NOT_ACTIVE' });
   });
 });

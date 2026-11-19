@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,10 +12,12 @@ import { Model, Types } from 'mongoose';
 import Stripe from 'stripe';
 import { Payment, PolicyAcceptance } from './payments.schema';
 import { CreatePaymentDto } from './payments.dto';
-import { PaymentStatus, PLATFORM_CURRENCY } from './payments.constants';
+import { BookingType, PaymentStatus, PLATFORM_CURRENCY } from './payments.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/notifications.schema';
 import { BookingPaymentSource } from './booking-payment-source';
+import { FlightBookingsService } from '../flight-bookings/flight-bookings.service';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class PaymentsService {
@@ -27,6 +30,7 @@ export class PaymentsService {
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly bookingSource: BookingPaymentSource,
+    private readonly flightBookings: FlightBookingsService,
   ) {
     const stripeKey =
       this.configService.get<string>('STRIPE_SECRET_KEY') ||
@@ -37,6 +41,7 @@ export class PaymentsService {
 
   async createPayment(userId: string, dto: CreatePaymentDto) {
     const quote = await this.bookingSource.payable(userId, dto.bookingType, dto.bookingId);
+    dto = { ...dto, bookingId: new Types.ObjectId(dto.bookingId).toHexString() };
     // PAY-02: Verify policy acceptance and timestamp before payment
     const acceptance = await this.policyAcceptanceModel.findOne({
       bookingId: dto.bookingId,
@@ -51,6 +56,13 @@ export class PaymentsService {
         message:
           'Provider policies must be displayed and accepted before proceeding to payment (PAY-02).',
       });
+    }
+
+    const existing = await this.paymentModel.findOne({ bookingId: dto.bookingId, bookingType: dto.bookingType, userId: new Types.ObjectId(userId) });
+    if (existing) {
+      if (![PaymentStatus.PENDING, PaymentStatus.FAILED].includes(existing.status)) throw new ConflictException('Booking is already paid');
+      if (Math.round(existing.amount * 100) !== quote.amountCents || existing.currency !== quote.currency) throw new ConflictException('Existing payment price differs from booking');
+      return { paymentId: existing.id, clientSecret: existing.stripeClientSecret, amount: existing.amount, currency: existing.currency, status: existing.status, policyAcceptedAt: existing.policyAcceptedAt };
     }
 
     // PAY-04: Single platform currency enforcement
@@ -82,6 +94,7 @@ export class PaymentsService {
     }
 
     const payment = new this.paymentModel({
+      _id: new Types.ObjectId(createHash('sha256').update(`${dto.bookingType}:${dto.bookingId}`).digest('hex').slice(0, 24)),
       bookingId: dto.bookingId,
       bookingType: dto.bookingType,
       userId: new Types.ObjectId(userId),
@@ -95,7 +108,15 @@ export class PaymentsService {
       createdAt: new Date(),
     });
 
-    await payment.save();
+    try {
+      await payment.save();
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+      // Concurrent creation uses the same Stripe key and the same local record key.
+      const winner = await this.paymentModel.findById(payment._id);
+      if (!winner || winner.stripePaymentIntentId !== paymentIntentId) throw error;
+      return { paymentId: winner.id, clientSecret: winner.stripeClientSecret, amount: winner.amount, currency: winner.currency, status: winner.status, policyAcceptedAt: winner.policyAcceptedAt };
+    }
 
     return {
       paymentId: payment.id,
@@ -125,10 +146,13 @@ export class PaymentsService {
       throw new BadRequestException('Payment does not match booking price');
     }
 
-    // Increment retry count
+    const changed = await this.paymentModel.updateOne(
+      { _id: payment._id, status: { $in: [PaymentStatus.PENDING, PaymentStatus.FAILED] } },
+      { $inc: { retryCount: 1 }, $set: { status: PaymentStatus.PENDING } },
+    );
+    if (!changed.modifiedCount) throw new ConflictException('Payment state changed');
     payment.retryCount += 1;
     payment.status = PaymentStatus.PENDING;
-    await payment.save();
 
     return {
       paymentId: payment.id,
@@ -192,34 +216,33 @@ export class PaymentsService {
       });
 
       if (payment) {
-        payment.status = PaymentStatus.SUCCEEDED;
-        payment.transactionId = intent.latest_charge?.toString() || intent.id;
-        await payment.save();
-
-        // GEN-01: Notify user of booking confirmation
-        await this.notificationsService.createNotification({
-          userId: payment.userId,
-          title: 'Booking Confirmed!',
-          message: `Your payment of ${payment.amount} ${payment.currency} for ${payment.bookingType.toLowerCase()} booking was successful and confirmed.`,
-          type: NotificationType.BOOKING_CONFIRMED,
-          metadata: {
-            bookingId: payment.bookingId,
-            bookingType: payment.bookingType,
-            paymentId: payment.id,
-          },
-        });
+        if (intent.status !== 'succeeded' || intent.amount_received !== Math.round(payment.amount * 100) ||
+          intent.currency !== payment.currency.toLowerCase() || intent.metadata?.bookingId !== payment.bookingId ||
+          intent.metadata?.bookingType !== payment.bookingType || intent.metadata?.userId !== payment.userId.toString()) {
+          throw new BadRequestException('Stripe payment does not match the booking payment record');
+        }
+        await this.paymentModel.updateOne(
+          { _id: payment._id, status: { $in: [PaymentStatus.PENDING, PaymentStatus.FAILED] } },
+          { $set: { status: PaymentStatus.SUCCEEDED, transactionId: typeof intent.latest_charge === 'string' ? intent.latest_charge : intent.id } },
+        );
+        // Reconcile on replay too: a process may have stopped after persisting payment success.
+        const current = await this.paymentModel.findById(payment._id);
+        if (current?.status === PaymentStatus.SUCCEEDED && current.bookingType === BookingType.FLIGHT) {
+          const result = await this.flightBookings.confirmPayment(current.bookingId, current.id as string);
+          if (!result.confirmed) {
+            await this.paymentModel.updateOne({ _id: current._id, status: PaymentStatus.SUCCEEDED }, { $set: { errorMessage: `REFUND_REQUIRED:${result.reason}` } });
+          }
+        }
+        // Each booking service owns its confirmation notification; payment success alone is not confirmation.
       }
     } else if (event.type === 'payment_intent.payment_failed') {
       const intent = event.data.object as Stripe.PaymentIntent;
-      const payment = await this.paymentModel.findOne({
+      const payment = await this.paymentModel.findOneAndUpdate({
         stripePaymentIntentId: intent.id,
-      });
+        status: PaymentStatus.PENDING,
+      }, { $set: { status: PaymentStatus.FAILED, errorMessage: intent.last_payment_error?.message || 'Payment failed' } }, { new: true });
 
       if (payment) {
-        payment.status = PaymentStatus.FAILED;
-        payment.errorMessage = intent.last_payment_error?.message || 'Payment failed';
-        await payment.save();
-
         // GEN-01: Notify user of payment failure
         await this.notificationsService.createNotification({
           userId: payment.userId,

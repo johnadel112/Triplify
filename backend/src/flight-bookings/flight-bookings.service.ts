@@ -10,6 +10,11 @@ import { Flight } from '../flights/flights.schema';
 import { Airport } from '../reference-data/reference.schema';
 import { BookingLeg, FlightBooking } from './flight-booking.schema';
 import { CreateFlightBookingDto, ListBookingsQuery } from './flight-bookings.dto';
+import { User } from '../users/user.schema';
+import { AccountStatus } from '../common/domain';
+import { Payment } from '../payments/payments.schema';
+import { BookingType, PaymentStatus } from '../payments/payments.constants';
+import { Notification, NotificationType } from '../notifications/notifications.schema';
 
 export const HOLD_MS = 10 * 60 * 1000; // exactly 10 minutes
 export const REFUNDS_PORT = 'REFUNDS_PORT';
@@ -64,6 +69,9 @@ export class FlightBookingsService {
     @InjectModel(Airport.name) private readonly airports: Model<Airport>,
     @InjectModel(FlightBooking.name) private readonly bookings: Model<FlightBooking>,
     @InjectConnection() private readonly connection: Connection,
+    @InjectModel(User.name) private readonly users: Model<User>,
+    @InjectModel(Payment.name) private readonly payments: Model<Payment>,
+    @InjectModel(Notification.name) private readonly notifications: Model<Notification>,
     @Optional() @Inject(REFUNDS_PORT) private readonly refunds?: RefundsPort,
   ) {}
 
@@ -184,28 +192,69 @@ export class FlightBookingsService {
 
   // ---------- Called by Divan after he VERIFIES the Stripe payment ----------
   async confirmPayment(bookingId: string, paymentId: string) {
-    const now = new Date();
-    const confirmed = await this.bookings
-      .findOneAndUpdate(
-        { _id: toOid(bookingId), status: 'PENDING', holdExpiresAt: { $gt: now } },
-        {
-          $set: { status: 'CONFIRMED', paymentId: new Types.ObjectId(paymentId), confirmedAt: now },
-          $unset: { holdExpiresAt: 1 },
-        },
-        { new: true },
-      )
-      .lean();
-    if (confirmed) {
-      // Yassin's rule: airports can't change once a flight has confirmed bookings
-      await this.flights.updateMany(
-        { _id: { $in: confirmed.legs.map((l) => l.flightId) } } as unknown as FilterQuery<Flight>,
-        { $set: { hasConfirmedBookings: true } },
+    const _id = toOid(bookingId);
+    const paidId = toOid(paymentId);
+    const result = await this.connection.transaction(async (session) => {
+      const booking = await this.bookings.findById(_id).session(session);
+      if (!booking) throw new NotFoundException('Booking not found');
+      const payment = await this.payments.findOne({
+        _id: paidId, bookingId, bookingType: BookingType.FLIGHT,
+        userId: booking.userId, status: PaymentStatus.SUCCEEDED,
+      }).session(session);
+      if (!payment || payment.currency !== booking.currency ||
+        Math.round(payment.amount * 100) !== Math.round(booking.totalPrice * 100)) {
+        throw new ConflictException('Payment is not verified for this booking');
+      }
+      if (booking.status === 'CONFIRMED' && booking.paymentId?.equals(paidId)) {
+        return { confirmed: true as const, booking: booking.toObject() };
+      }
+      const now = new Date();
+      if (booking.status !== 'PENDING' || !booking.holdExpiresAt || booking.holdExpiresAt <= now) {
+        if (booking.status === 'PENDING') {
+          booking.status = 'EXPIRED';
+          booking.holdExpiresAt = undefined;
+          await booking.save({ session });
+          await this.releaseSeats(booking.legs, booking.seatCount, session);
+        }
+        return { confirmed: false as const, reason: 'HOLD_EXPIRED_OR_INVALID' };
+      }
+      // A real write serializes against account deactivation even within the same millisecond.
+      const active = await this.users.updateOne(
+        { _id: booking.userId, status: AccountStatus.ACTIVE },
+        { $inc: { bookingRevision: 1 } }, { session },
       );
-      return { confirmed: true as const, booking: confirmed };
+      if (active.modifiedCount !== 1) {
+        booking.status = 'EXPIRED';
+        booking.holdExpiresAt = undefined;
+        await booking.save({ session });
+        await this.releaseSeats(booking.legs, booking.seatCount, session);
+        return { confirmed: false as const, reason: 'ACCOUNT_NOT_ACTIVE' };
+      }
+      for (const leg of booking.legs) {
+        const flight = await this.flights.updateOne(
+          { _id: leg.flightId, status: 'SCHEDULED', departureTimeUtc: { $gt: now } },
+          { $set: { hasConfirmedBookings: true } }, { session },
+        );
+        if (flight.matchedCount !== 1) throw new ConflictException('Flight is no longer bookable');
+      }
+      booking.status = 'CONFIRMED';
+      booking.paymentId = paidId;
+      booking.confirmedAt = now;
+      booking.holdExpiresAt = undefined;
+      await booking.save({ session });
+      await this.notifications.create([{
+        userId: booking.userId, title: 'Flight Booking Confirmed',
+        message: `Flight booking ${booking.reference} is confirmed.`,
+        type: NotificationType.BOOKING_CONFIRMED,
+        metadata: { bookingId, bookingType: BookingType.FLIGHT, reference: booking.reference },
+      }], { session });
+      return { confirmed: true as const, booking: booking.toObject() };
+    });
+    if (!result.confirmed && this.refunds) {
+      const booking = await this.bookings.findById(_id).lean();
+      if (booking) await this.refunds.requestRefund({ bookingId, userId: String(booking.userId), bookingType: 'flight', amount: booking.totalPrice, reason: result.reason });
     }
-    // Hold expired or booking not pending: Divan must refund the payment.
-    await this.expireOne(toOid(bookingId));
-    return { confirmed: false as const, reason: 'HOLD_EXPIRED_OR_INVALID' };
+    return result;
   }
 
   // ---------- Expiry: guarded transition + release, safe to run repeatedly ----------
@@ -236,6 +285,14 @@ export class FlightBookingsService {
       } catch (e) {
         this.log.error(`expire ${d._id}: ${(e as Error).message}`);
       }
+    }
+    // Recover a process stop between verified payment persistence and booking/refund processing.
+    const paid = await this.payments.find({ bookingType: BookingType.FLIGHT, status: PaymentStatus.SUCCEEDED }).lean();
+    for (const payment of paid) {
+      const booking = await this.bookings.findById(payment.bookingId).lean();
+      if (!booking || booking.status === 'CONFIRMED') continue;
+      try { await this.confirmPayment(payment.bookingId, String(payment._id)); }
+      catch (error) { this.log.error(`payment reconciliation ${payment._id}: ${(error as Error).message}`); }
     }
     return due.length;
   }
@@ -332,7 +389,7 @@ export class FlightBookingsService {
         const b = await this.bookings
           .findOneAndUpdate(
             { _id: current._id, userId: current.userId, status: 'CONFIRMED' },
-            { $set: { status: 'CANCELLED', cancelledAt: new Date(), refundAmount } },
+            { $set: { status: 'CANCELLED', cancelledAt: new Date(), refundAmount, refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE' } },
             { new: true, session },
           )
           .lean();
@@ -350,6 +407,7 @@ export class FlightBookingsService {
         amount: refundAmount, reason: 'Customer cancellation',
       });
     }
-    return { reference: current.reference, status: 'CANCELLED', refundAmount, currency: current.currency };
+    const updated = await this.bookings.findById(current._id).lean();
+    return { reference: current.reference, status: 'CANCELLED', refundAmount, refundStatus: updated?.refundStatus, currency: current.currency };
   }
 }

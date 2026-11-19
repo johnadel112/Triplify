@@ -19,19 +19,21 @@ is **not submission-ready**. No merge to main is authorized.
 | Task | Owner | Priority | Requirement ID | Status | Evidence/test | Commit or PR |
 |---|---|---|---|---|---|---|
 | Inspect integration and PR history | John | CRITICAL | Milestone 1 | COMPLETED | Remote fetch, merge history, PR search, conflict scan | Base b03565a |
-| Install/lint/build/unit/e2e | Team | CRITICAL | GEN-13 | IN PROGRESS | npm.cmd ci succeeded; lint/build passed; 102 unit tests passed; e2e finishing | Pending |
+| Install/lint/build/unit/e2e | Team | CRITICAL | GEN-13 | VERIFIED | npm.cmd ci, lint/build, 107 unit tests and 85 e2e tests passed | Working branch |
 | Reject unsigned webhooks and fabricated provider results | Divan | CRITICAL | PAY-01, PAY-03 | VERIFIED | webhook-security.spec.ts, payment-provider.spec.ts; signed hotel tests and strict FAILED refund assertion | Working branch |
 | Authoritative booking price, ownership, hold validation | Divan | CRITICAL | PAY-01 | VERIFIED | booking-payment-source.spec.ts and payment-provider.spec.ts; snapshot price, owner query, currency/precision/hold rejection | Working branch |
-| Flight confirmation and delayed-payment reconciliation | Zeyad/Divan | CRITICAL | FLT-23, PAY-01 | NOT STARTED | confirmPayment has no payment-flow caller | Pending |
-| Refund adapter, durable retries and idempotency | Zeyad/Divan | CRITICAL | FLT-26, PAY-03 | NOT STARTED | Optional REFUNDS_PORT unbound; refund service lacks booking ownership check | Pending |
-| Confirmation/account deactivation serialization | Zeyad/John | CRITICAL | ACC-12 | NOT STARTED | Flight confirmation does not write user document in transaction | Pending |
-| Develop workflow, CI and integration PR | John | CRITICAL | Milestone 1 | NOT STARTED | Current workflow only main PRs | Pending |
+| Flight confirmation and delayed-payment reconciliation | Zeyad/Divan | CRITICAL | FLT-23, PAY-01 | VERIFIED | Signed HTTP integration, duplicate/out-of-order events, amount/owner mismatch and expired hold refund tests | Working branch |
+| Refund adapter, durable retries and idempotency | Zeyad/Divan | CRITICAL | FLT-26, PAY-03 | VERIFIED | Real local DB + mocked provider: eligible cancellation, correct amount, ownership, spoofed reason, retries, pending reconciliation and provider failure | Working branch |
+| Confirmation/account deactivation serialization | Zeyad/John | CRITICAL | ACC-12 | VERIFIED | Forced overlapping transactions in booking-integration.e2e-spec.ts; exactly one state can commit | Working branch |
+| Develop workflow, CI and integration PR | John | CRITICAL | Milestone 1 | IN PROGRESS | Workflow now covers all requested branches and caches test replica-set binary; remote CI not run yet | Pending |
 | Provider management and booking eligibility | Magdy/Yassin | HIGH | ACC-15 | NOT STARTED | PROVIDER_MANAGEMENT remains fail-closed placeholder | Pending |
-| Actual policies and notification ownership | Divan | HIGH | PAY-02, GEN-01 | NOT STARTED | Hardcoded policies; generic payment success claims booking confirmation | Pending |
+| Actual policies | Divan | HIGH | PAY-02 | NOT STARTED | PoliciesController still returns hardcoded policies; blocks submission readiness | Pending |
+| Confirmation notification ownership | Divan | HIGH | GEN-01 | VERIFIED | Booking services own notifications; concurrent flight webhooks produce one; existing hotel notification test passes | Working branch |
 | Visible comment listing | Yassin | HIGH | BLG-05 | NOT STARTED | No listing endpoint | Pending |
 | Airline provider ownership and dry-run migration | Yassin | HIGH | FLT-01, FLT-03 | NOT STARTED | Requires providerId mapping review | Pending |
 | Atlas verification | Team | HIGH | Database integration | BLOCKED | No securely supplied Atlas test credentials; URI validator accepts mongodb+srv | Pending |
 | Frontend foundation, auth, API matrix and allocation | Team | HIGH | Milestone 2 | NOT STARTED | frontend directory absent | Pending |
+| Dependency vulnerability remediation | Team | CRITICAL | GEN-13 | NOT STARTED | npm audit reports 12 advisories, including 2 high | Pending |
 
 ## Implementation order and limitations
 
@@ -56,6 +58,19 @@ Mongoose implementation; preserve the contract and implement against real schema
 - `npm.cmd audit --json`: exit 1, 12 advisories (10 moderate, 2 high), including multer / @nestjs/platform-express, js-yaml / Swagger, minimatch / CLI and TypeScript ESLint. Dependency remediation remains open.
 - `git diff --check`: passed.
 
-No clean pre-change baseline is claimed: dependency installation completed after the first
-security edits. All reported passes above refer to the repair branch. Signature tests exercise
+An untouched archive of b03565a is being tested separately in ignored .cache/integration-baseline,
+using the same lockfile-installed dependencies. All passes above refer to the repair branch. Signature tests exercise
 the real Stripe SDK cryptography with local test secrets; provider API responses are mocked.
+
+## Second repair batch
+
+`npm.cmd run lint`, `npm.cmd run build`, `npm.cmd test -- --runInBand` (107 tests),
+and `npm.cmd run test:e2e -- --runInBand` (85 tests) passed. Both DB-backed test suites
+use isolated local replica sets. An intermediate TypeScript return-type error and missing
+currency on a unit fixture were fixed, then the full suites were rerun successfully.
+
+External Stripe sandbox, actual Atlas connectivity and hosted GitHub Actions results remain
+unverified. Existing historical duplicate payment/refund records need a read-only deployment
+audit. No records were migrated. Jobs with no provider reference older than 23 hours are not
+blindly retried through Stripe. Provider activation/confirmation serialization and policy
+display remain Stage B work; this is not a claim that all Milestone 1 requirements are ready.

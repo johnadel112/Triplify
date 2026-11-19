@@ -4,8 +4,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PLATFORM_CURRENCY } from './payments.constants';
 import { Payment, Refund } from './payments.schema';
 import { RefundsService } from './refunds.service';
+import { RefundBookingSource } from './refund-booking-source';
 
 describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
+  const policy = [{ daysBefore: 7, refundPercentage: 100 }, { daysBefore: 3, refundPercentage: 50 }];
   let refundsService: RefundsService;
 
   beforeEach(() => {
@@ -21,6 +23,7 @@ describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
       mockRefundModel,
       mockConfigService,
       mockNotificationsService,
+      {} as RefundBookingSource,
     );
   });
 
@@ -37,17 +40,17 @@ describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
     });
 
     it('calculates 100% refund when user cancels 7 or more days before', () => {
-      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 8);
+      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 8, policy);
       expect(percentage).toBe(100);
     });
 
     it('calculates 50% refund when user cancels between 3 and 6 days before', () => {
-      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 4);
+      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 4, policy);
       expect(percentage).toBe(50);
     });
 
     it('calculates 0% refund when user cancels less than 3 days before', () => {
-      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 1);
+      const percentage = refundsService.calculateRefundPercentage('USER_CANCELLATION', 1, policy);
       expect(percentage).toBe(0);
     });
 
@@ -60,6 +63,10 @@ describe('Payments & Refunds Module (PAY-01, PAY-02, PAY-03, PAY-04)', () => {
       expect(refundsService.calculateRefundPercentage('USER_CANCELLATION', 12, customTiers)).toBe(90);
       expect(refundsService.calculateRefundPercentage('USER_CANCELLATION', 6, customTiers)).toBe(40);
       expect(refundsService.calculateRefundPercentage('USER_CANCELLATION', 2, customTiers)).toBe(0);
+    });
+    it('does not fabricate a policy or cancellation date when missing', () => {
+      expect(() => refundsService.calculateRefundPercentage('USER_CANCELLATION')).toThrow('policy');
+      expect(refundsService.calculateRefundPercentage('USER_CANCELLATION', 10, [])).toBe(0);
     });
   });
 });

@@ -69,6 +69,15 @@ export class NotificationsService implements NotificationDeliveryPort {
     return notif.save();
   }
 
+  async createNotificationOnce(id: string, data: {
+    userId: string | Types.ObjectId; title: string; message: string;
+    type: NotificationType; metadata?: Record<string, unknown>;
+  }) {
+    await this.notifications.updateOne({ _id: new Types.ObjectId(id) }, {
+      $setOnInsert: { ...data, userId: new Types.ObjectId(data.userId.toString()), read: false, createdAt: new Date() },
+    }, { upsert: true });
+  }
+
   async listForUser(userId: string, page = 1, limit = 10) {
     const userObjectId = new Types.ObjectId(userId);
     const query = { userId: userObjectId };

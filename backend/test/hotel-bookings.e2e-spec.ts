@@ -118,7 +118,10 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       policyAccepted: true,
       policyAcceptedAt: now,
     });
-    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: { id: intentId } } });
+    const signed = signedEvent({ type: 'payment_intent.succeeded', data: { object: {
+      id: intentId, status: 'succeeded', amount_received: Math.round(amount * 100), currency: 'usd',
+      metadata: { bookingId, bookingType: 'HOTEL', userId: actor.user._id.toString() },
+    } } });
     await request(server())
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')
@@ -603,7 +606,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       status: 'CANCELLED',
       cancellation: { refundPercentage: 100, refundAmount: '200.00', refundStatus: 'SUCCEEDED' },
     });
-    expect(stripeRefundCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 20000 }));
+    expect(stripeRefundCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 20000 }), expect.objectContaining({ idempotencyKey: expect.any(String) }));
     expect((await payments.findOne({ bookingId: booking.id }))!.status).toBe('REFUNDED');
     expect(
       await notifications.countDocuments({ userId: traveler.user._id, type: 'BOOKING_CANCELLED' }),
@@ -656,7 +659,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
       .expect(200);
     expect(cancelled.body.status).toBe('CANCELLED');
     expect(cancelled.body.cancellation.refundStatus).toBe('FAILED');
-    expect(await refundsModel.countDocuments({ bookingId: booking.id })).toBe(0);
+    expect(await refundsModel.countDocuments({ bookingId: booking.id, status: 'FAILED' })).toBe(1);
   });
 
   // ------------------------------------------------------------------ HTL-23 / HTL-24

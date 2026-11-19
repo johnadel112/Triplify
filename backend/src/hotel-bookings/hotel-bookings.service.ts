@@ -553,7 +553,7 @@ export class HotelBookingsService implements OnModuleInit {
           },
           cancelled.policy.cancellationTiers,
         );
-        cancellation.refundStatus = 'SUCCEEDED';
+        cancellation.refundStatus = result.status === 'SUCCEEDED' ? 'SUCCEEDED' : result.status === 'FAILED' ? 'FAILED' : 'PENDING';
         if ('refundId' in result) cancellation.refundId = result.refundId as string;
       } catch (error) {
         cancellation.refundStatus = 'FAILED';

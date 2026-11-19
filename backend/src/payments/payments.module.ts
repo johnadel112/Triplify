@@ -9,7 +9,7 @@ import {
   RefundSchema,
 } from './payments.schema';
 import { PaymentsService } from './payments.service';
-import { RefundsService } from './refunds.service';
+import { RefundsModule } from './refunds.module';
 import { PaymentsController } from './payments.controller';
 import { PoliciesController } from './policies.controller';
 import { RefundsController } from './refunds.controller';
@@ -17,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { FlightBooking, FlightBookingSchema } from '../flight-bookings/flight-booking.schema';
 import { HotelBooking, HotelBookingSchema } from '../hotel-bookings/hotel-booking.schema';
 import { BookingPaymentSource } from './booking-payment-source';
+import { FlightBookingsModule } from '../flight-bookings/flight-bookings.module';
 
 @Module({
   imports: [
@@ -28,10 +29,12 @@ import { BookingPaymentSource } from './booking-payment-source';
       { name: HotelBooking.name, schema: HotelBookingSchema },
     ]),
     NotificationsModule,
+    RefundsModule,
+    FlightBookingsModule,
   ],
   controllers: [PaymentsController, PoliciesController, RefundsController],
-  providers: [PaymentsService, RefundsService, BookingPaymentSource],
-  exports: [PaymentsService, RefundsService],
+  providers: [PaymentsService, BookingPaymentSource],
+  exports: [PaymentsService, RefundsModule],
 })
 export class PaymentsModule {}
 
