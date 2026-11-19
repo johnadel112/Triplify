@@ -43,14 +43,23 @@ export class PoliciesController {
     const baggageByFlight = new Map(flights.map((flight) => [flight._id.toString(), flight]));
     return {
       cancellationPolicy: { tiers: booking.cancellationPolicy },
+      // FLT-04/FLT-08 terms snapshotted at booking: free bags and weight per cabin, extra-bag price.
       baggagePolicy: {
-        note: 'No free-baggage allowance is configured; only provider extra-baggage pricing is available.',
-        legs: booking.legs.map((leg) => ({
-          flightId: leg.flightId.toString(),
-          flightNumber: leg.flightNumber,
-          extraBaggagePricePerKg: baggageByFlight.get(leg.flightId.toString())?.extraBaggagePricePerKg ?? 0,
-          currency: booking.currency,
-        })),
+        extraBagPrice: booking.baggagePolicy?.extraBagPrice ?? null,
+        maxExtraBagsPerPassenger: booking.baggagePolicy?.maxExtraBagsPerPassenger ?? null,
+        currency: booking.currency,
+        legs: booking.legs.map((leg) => {
+          const terms = booking.baggagePolicy?.legs.find((l) => l.flightId === leg.flightId.toString());
+          return {
+            flightId: leg.flightId.toString(),
+            flightNumber: leg.flightNumber,
+            cabinClass: leg.cabinClass,
+            freeBags: terms?.freeBags ?? null,
+            maxBagWeightKg: terms?.maxBagWeightKg ?? null,
+            extraBaggagePricePerKg: baggageByFlight.get(leg.flightId.toString())?.extraBaggagePricePerKg ?? 0,
+            currency: booking.currency,
+          };
+        }),
       },
     };
   }

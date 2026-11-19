@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public, Roles } from '../auth/guards';
-import { UserRole } from '../common/domain';
+import { CurrentUser, Public, Roles } from '../auth/guards';
+import { Principal, UserRole } from '../common/domain';
 import { ObjectIdPipe } from '../common/http';
-import { CreateAirlineDto } from './flights.dto';
+import { AirlineCancellationPolicyDto, BaggagePolicyDto, CreateAirlineDto } from './flights.dto';
 import { FlightsService } from './flights.service';
 
 /** FLT-01: airline profiles. Admins create airlines; moderators then manage their own. */
@@ -21,6 +21,32 @@ export class AirlinesController {
   })
   create(@Body() dto: CreateAirlineDto) {
     return this.flights.createAirline(dto);
+  }
+
+  @Put(':id/baggage-policy')
+  @ApiCookieAuth()
+  @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'FLT-08: Price per extra bag and max extra bags per passenger (my airline)' })
+  baggagePolicy(
+    @CurrentUser() user: Principal,
+    @Param('id', ObjectIdPipe) id: string,
+    @Body() dto: BaggagePolicyDto,
+  ) {
+    return this.flights.setBaggagePolicy(id, user.providerId, dto);
+  }
+
+  @Put(':id/cancellation-policy')
+  @ApiCookieAuth()
+  @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({
+    summary: 'FLT-09: Cancellation tiers by days before departure with refund percentages (my airline)',
+  })
+  cancellationPolicy(
+    @CurrentUser() user: Principal,
+    @Param('id', ObjectIdPipe) id: string,
+    @Body() dto: AirlineCancellationPolicyDto,
+  ) {
+    return this.flights.setCancellationPolicy(id, user.providerId, dto);
   }
 
   @Get(':id')

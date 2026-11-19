@@ -40,7 +40,7 @@ type FlightLean = {
   departureTimeUtc: Date;
   arrivalTimeUtc: Date;
   status: string;
-  cabins?: Record<string, { seatCount: number; price: number } | undefined>;
+  cabins?: Record<string, { seatCount: number; price: number; freeBags?: number; maxBagWeightKg?: number } | undefined>;
   extraBaggagePricePerKg?: number;
   cancellationTiers?: { hoursBeforeDeparture: number; refundPercentage: number }[];
 };
@@ -110,16 +110,24 @@ export class FlightBookingsService {
     const seatCount = dto.passengers.filter((p) => p.type !== 'infant').length;
     if (seatCount < 1) throw new BadRequestException('At least one adult or child passenger is required');
     const bagKg = dto.passengers.reduce((sum, p) => sum + (p.extraBaggageKg ?? 0), 0);
+    const extraBags = dto.passengers.reduce((sum, p) => sum + (p.extraBags ?? 0), 0);
 
     const legs: BookingLeg[] = [];
     let policy: FlightBooking['cancellationPolicy'] = [];
+    let baggagePolicy: NonNullable<FlightBooking['baggagePolicy']> = { legs: [] };
     for (const [i, l] of dto.legs.entries()) {
       const flight = (await this.flights.findById(toOid(l.flightId)).lean()) as unknown as FlightLean | null;
       if (!flight || flight.status !== 'SCHEDULED') throw new NotFoundException('Flight not available');
-      const airline = await this.airlines.exists({
+      const airline = await this.airlines.findOne({
         $or: [{ _id: flight.airlineId }, { moderatorId: flight.airlineId }], active: true, verified: true,
-      });
+      }).select('baggagePolicy cancellationTiers').lean();
       if (!airline) throw new NotFoundException('Flight not available');
+      // FLT-08: extra bags are sold per bag, within the airline's per-passenger maximum.
+      const bagRule = airline.baggagePolicy;
+      if (extraBags > 0 && !bagRule) throw new BadRequestException('This airline does not sell extra bags');
+      if (bagRule && dto.passengers.some((p) => (p.extraBags ?? 0) > bagRule.maxExtraBagsPerPassenger)) {
+        throw new BadRequestException(`At most ${bagRule.maxExtraBagsPerPassenger} extra bags per passenger`);
+      }
       if (flight.departureTimeUtc <= new Date()) throw new BadRequestException('Flight already departed');
       const cabin = flight.cabins?.[l.cabinClass];
       if (!cabin) throw new NotFoundException(`Cabin ${l.cabinClass} not found on flight`);
@@ -128,8 +136,17 @@ export class FlightBookingsService {
       if (previous && flight.departureTimeUtc <= previous.arrivalTime) {
         throw new BadRequestException('Return flight must depart after the outbound arrives');
       }
-      if (i === 0) policy = flight.cancellationTiers ?? [];
-      const baggageCost = round2(bagKg * (flight.extraBaggagePricePerKg ?? 0));
+      if (i === 0) {
+        // FLT-09: the airline's day-based tiers (snapshotted in hours); legacy per-flight tiers otherwise.
+        policy = airline.cancellationTiers?.length
+          ? airline.cancellationTiers.map((t) => ({ hoursBeforeDeparture: t.daysBefore * 24, refundPercentage: t.refundPercentage }))
+          : flight.cancellationTiers ?? [];
+        baggagePolicy = { extraBagPrice: bagRule?.extraBagPrice, maxExtraBagsPerPassenger: bagRule?.maxExtraBagsPerPassenger, legs: [] };
+      }
+      baggagePolicy.legs.push({ flightId: String(flight._id), cabinClass: l.cabinClass, freeBags: cabin.freeBags, maxBagWeightKg: cabin.maxBagWeightKg });
+      const baggageCost = round2(
+        extraBags * (bagRule?.extraBagPrice ?? 0) + bagKg * (flight.extraBaggagePricePerKg ?? 0),
+      );
       legs.push({
         flightId: flight._id,
         flightNumber: flight.flightNumber,
@@ -152,6 +169,7 @@ export class FlightBookingsService {
         ...p,
         dateOfBirth: new Date(p.dateOfBirth),
         extraBaggageKg: p.extraBaggageKg ?? 0,
+        extraBags: p.extraBags ?? 0,
       })),
       seatCount,
       currency: CURRENCY,
@@ -159,6 +177,7 @@ export class FlightBookingsService {
       firstDeparture: legs[0].departureTime,
       lastDeparture: legs[legs.length - 1].departureTime,
       cancellationPolicy: policy,
+      baggagePolicy,
     };
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
@@ -488,7 +507,7 @@ export class FlightBookingsService {
     return {
       reference: b.reference,
       passengers: b.passengers.map((p) => ({
-        name: `${p.firstName} ${p.lastName}`, type: p.type, extraBaggageKg: p.extraBaggageKg,
+        name: `${p.firstName} ${p.lastName}`, type: p.type, extraBaggageKg: p.extraBaggageKg, extraBags: p.extraBags ?? 0,
       })),
       legs: b.legs.map((l) => ({
         flightNumber: l.flightNumber,

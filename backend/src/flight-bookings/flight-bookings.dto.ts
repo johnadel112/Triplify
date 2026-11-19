@@ -17,6 +17,8 @@ export class PassengerDto {
   @IsString() passportNumber!: string;
   @IsIn(['adult', 'child', 'infant']) type!: 'adult' | 'child' | 'infant';
   @IsOptional() @IsInt() @Min(0) @Max(50) extraBaggageKg?: number;
+  /** FLT-19: extra bags; limited by the airline's maxExtraBagsPerPassenger (FLT-08). */
+  @IsOptional() @IsInt() @Min(0) @Max(10) extraBags?: number;
 }
 
 export class CreateFlightBookingDto {

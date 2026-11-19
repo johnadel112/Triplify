@@ -12,7 +12,9 @@ import { Flight, AirlineProfile } from './flights.schema';
 import { Airport } from '../reference-data/reference.schema';
 import { NOTIFICATION_DELIVERY, NotificationDeliveryPort } from '../integrations/contracts';
 import {
+  AirlineCancellationPolicyDto,
   AirlineProfileDto,
+  BaggagePolicyDto,
   CreateAirlineDto,
   CreateFlightDto,
   SearchFlightsQuery,
@@ -53,12 +55,52 @@ export class FlightsService {
     return this.publicAirline(airline);
   }
 
+  /** FLT-08: the assigned moderator sets the airline's extra baggage policy. */
+  async setBaggagePolicy(airlineId: string, actorProviderId: string | undefined, dto: BaggagePolicyDto) {
+    const airline = await this.ownAirline(airlineId, actorProviderId);
+    airline.baggagePolicy = {
+      extraBagPrice: dto.extraBagPrice,
+      maxExtraBagsPerPassenger: dto.maxExtraBagsPerPassenger,
+    };
+    await airline.save();
+    return this.publicAirline(airline);
+  }
+
+  /** FLT-09: the assigned moderator sets cancellation tiers; thresholds must be unique. */
+  async setCancellationPolicy(
+    airlineId: string,
+    actorProviderId: string | undefined,
+    dto: AirlineCancellationPolicyDto,
+  ) {
+    const days = dto.tiers.map((tier) => tier.daysBefore);
+    if (new Set(days).size !== days.length) {
+      throw new BadRequestException('Each cancellation tier needs a unique daysBefore threshold');
+    }
+    const airline = await this.ownAirline(airlineId, actorProviderId);
+    airline.cancellationTiers = [...dto.tiers]
+      .sort((a, b) => b.daysBefore - a.daysBefore)
+      .map((tier) => ({ daysBefore: tier.daysBefore, refundPercentage: tier.refundPercentage }));
+    await airline.save();
+    return this.publicAirline(airline);
+  }
+
+  private async ownAirline(airlineId: string, actorProviderId: string | undefined) {
+    if (!actorProviderId || actorProviderId !== airlineId) {
+      throw new ForbiddenException('You can only manage your own airline');
+    }
+    const airline = await this.airlineModel.findById(airlineId);
+    if (!airline) throw new NotFoundException('Airline not found');
+    return airline;
+  }
+
   private publicAirline(airline: AirlineProfile) {
     return {
       id: airline.id as string,
       name: airline.name,
       logoUrl: airline.logoUrl,
       contactEmail: airline.contactEmail,
+      baggagePolicy: airline.baggagePolicy,
+      cancellationTiers: airline.cancellationTiers,
       verified: airline.verified,
       active: airline.active,
     };
@@ -266,7 +308,16 @@ export class FlightsService {
       );
     }
 
-    Object.assign(flight, updateDto);
+    // FLT-05: a cabin update keeps the cabin's other fields (e.g. FLT-04 baggage allowance) and the
+    // cabins that were not sent, instead of replacing the whole cabin map.
+    const { cabins, ...rest } = updateDto;
+    Object.assign(flight, rest);
+    if (cabins) {
+      const merged = { ...(flight.cabins ?? {}) };
+      for (const [name, cabin] of Object.entries(cabins)) merged[name] = { ...merged[name], ...cabin };
+      flight.cabins = merged;
+      flight.markModified('cabins');
+    }
     return flight.save();
   }
 }

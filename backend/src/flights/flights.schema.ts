@@ -16,6 +16,16 @@ export class AirlineProfile extends Document {
   @Prop({ type: String })
   contactEmail?: string;
 
+  /** FLT-08: price per extra bag and maximum extra bags per passenger. */
+  @Prop({
+    type: { extraBagPrice: Number, maxExtraBagsPerPassenger: Number, _id: false },
+  })
+  baggagePolicy?: { extraBagPrice: number; maxExtraBagsPerPassenger: number };
+
+  /** FLT-09: days-before-departure thresholds with refund percentages. */
+  @Prop({ type: [{ daysBefore: Number, refundPercentage: Number, _id: false }], default: [] })
+  cancellationTiers!: { daysBefore: number; refundPercentage: number }[];
+
   @Prop({ type: Boolean, default: true, index: true })
   verified!: boolean;
 
@@ -49,9 +59,12 @@ export class Flight extends Document {
   @Prop({ type: String, required: true })
   departureDate!: string; // YYYY-MM-DD
 
-  // { economy: { seatCount, price }, premiumEconomy: {...}, business: {...}, first: {...} }
+  // { economy: { seatCount, price, freeBags, maxBagWeightKg }, premiumEconomy: {...}, ... }
   @Prop({ type: Object, required: true })
-  cabins!: Record<string, { seatCount: number; price: number }>;
+  cabins!: Record<
+    string,
+    { seatCount: number; price: number; freeBags?: number; maxBagWeightKg?: number }
+  >;
 
   @Prop({ type: Number, required: true, default: 0 })
   extraBaggagePricePerKg!: number;

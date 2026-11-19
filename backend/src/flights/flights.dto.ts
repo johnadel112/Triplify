@@ -23,7 +23,12 @@ import {
 
 export const CABIN_CLASSES = ['economy', 'premiumEconomy', 'business', 'first'] as const;
 export type CabinClass = (typeof CABIN_CLASSES)[number];
-export type CabinMap = Partial<Record<CabinClass, { seatCount: number; price: number }>>;
+export type CabinMap = Partial<
+  Record<
+    CabinClass,
+    { seatCount: number; price: number; freeBags?: number; maxBagWeightKg?: number }
+  >
+>;
 
 const IATA = /^[A-Z]{3}$/;
 const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
@@ -31,10 +36,11 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * FLT-04: cabins is a plain object keyed by the fixed cabin set, each with a whole-number seat
- * count and a positive price. Kept as a plain object (not a nested class) because flight bookings
- * address seats as cabins.<cabin>.seatCount and the service iterates its entries.
+ * count, a positive price, a free baggage allowance (bag count) and a maximum weight per bag (kg).
+ * Kept as a plain object (not a nested class) because flight bookings address seats as
+ * cabins.<cabin>.seatCount and the service iterates its entries.
  */
-function IsCabinMap(minSeats: number, options?: ValidationOptions) {
+function IsCabinMap(minSeats: number, requireBaggage: boolean, options?: ValidationOptions) {
   return ValidateBy(
     {
       name: 'isCabinMap',
@@ -47,23 +53,70 @@ function IsCabinMap(minSeats: number, options?: ValidationOptions) {
             entries.every(([key, cabin]) => {
               if (!(CABIN_CLASSES as readonly string[]).includes(key)) return false;
               if (typeof cabin !== 'object' || cabin === null) return false;
-              const { seatCount, price, ...rest } = cabin as Record<string, unknown>;
+              const { seatCount, price, freeBags, maxBagWeightKg, ...rest } = cabin as Record<
+                string,
+                unknown
+              >;
+              const bagsOk =
+                freeBags === undefined
+                  ? !requireBaggage
+                  : Number.isInteger(freeBags) && (freeBags as number) >= 0 && (freeBags as number) <= 10;
+              const weightOk =
+                maxBagWeightKg === undefined
+                  ? !requireBaggage
+                  : typeof maxBagWeightKg === 'number' && maxBagWeightKg > 0 && maxBagWeightKg <= 50;
               return (
                 Object.keys(rest).length === 0 &&
                 Number.isInteger(seatCount) &&
                 (seatCount as number) >= minSeats &&
                 typeof price === 'number' &&
-                price > 0
+                price > 0 &&
+                bagsOk &&
+                weightOk
               );
             })
           );
         },
         defaultMessage: () =>
-          `cabins must use only ${CABIN_CLASSES.join(', ')}, each with an integer seatCount >= ${minSeats} and a positive price`,
+          `cabins must use only ${CABIN_CLASSES.join(', ')}, each with an integer seatCount >= ${minSeats}, a positive price` +
+          `${requireBaggage ? ', ' : ' and optionally '}freeBags (0-10 bags) and maxBagWeightKg (0-50 kg)`,
       },
     },
     options,
   );
+}
+
+/** FLT-08: airline-wide extra baggage pricing. */
+export class BaggagePolicyDto {
+  @ApiProperty({ minimum: 0.01, example: 45 })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  extraBagPrice!: number;
+
+  @ApiProperty({ minimum: 0, maximum: 10, example: 2 })
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  maxExtraBagsPerPassenger!: number;
+}
+
+export class AirlineCancellationTierDto {
+  @ApiProperty({ minimum: 0, example: 7 }) @IsInt() @Min(0) @Max(365) daysBefore!: number;
+  @ApiProperty({ minimum: 0, maximum: 100, example: 100 })
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  refundPercentage!: number;
+}
+
+/** FLT-09: airline-wide cancellation tiers with unique days-before-departure thresholds. */
+export class AirlineCancellationPolicyDto {
+  @ApiProperty({ type: [AirlineCancellationTierDto] })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => AirlineCancellationTierDto)
+  tiers!: AirlineCancellationTierDto[];
 }
 
 export class CancellationTierDto {
@@ -133,8 +186,10 @@ export class CreateFlightDto {
   @Matches(LOCAL_DATE_TIME, { message: 'arrivalTimeLocal must be YYYY-MM-DDTHH:mm' })
   arrivalTimeLocal!: string;
 
-  @ApiProperty({ example: { economy: { seatCount: 150, price: 320 } } })
-  @IsCabinMap(1)
+  @ApiProperty({
+    example: { economy: { seatCount: 150, price: 320, freeBags: 1, maxBagWeightKg: 23 } },
+  })
+  @IsCabinMap(1, true)
   cabins!: CabinMap;
 
   @ApiPropertyOptional({ minimum: 0 })
@@ -179,7 +234,7 @@ export class UpdateFlightDto {
 
   @ApiPropertyOptional({ description: 'Seat counts may be 0 once a cabin is sold out' })
   @IsOptional()
-  @IsCabinMap(0)
+  @IsCabinMap(0, false)
   cabins?: CabinMap;
 
   @ApiPropertyOptional({ minimum: 0 })

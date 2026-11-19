@@ -13,6 +13,8 @@ export class PassengerEntry {
   @Prop({ type: String, required: true }) passportNumber!: string;
   @Prop({ type: String, required: true, enum: ['adult', 'child', 'infant'] }) type!: string;
   @Prop({ type: Number, default: 0, min: 0 }) extraBaggageKg!: number;
+  /** FLT-19: extra bags beyond the cabin's free allowance (FLT-08 pricing). */
+  @Prop({ type: Number, default: 0, min: 0 }) extraBags!: number;
 }
 const PassengerEntrySchema = SchemaFactory.createForClass(PassengerEntry);
 
@@ -51,6 +53,12 @@ export class FlightBooking {
   @Prop({ type: Date }) confirmedAt?: Date;
   @Prop({ type: Date }) cancelledAt?: Date;
   @Prop({ type: Number }) refundAmount?: number;
+  /** FLT-04/FLT-08 baggage terms agreed at booking time (shown before payment, PAY-02). */
+  @Prop({ type: Object }) baggagePolicy?: {
+    extraBagPrice?: number;
+    maxExtraBagsPerPassenger?: number;
+    legs: { flightId: string; cabinClass: string; freeBags?: number; maxBagWeightKg?: number }[];
+  };
   /** FLT-06: PROVIDER when the airline cancelled the flight (refunded in full). */
   @Prop({ type: String, enum: ['USER', 'PROVIDER'] }) cancelledBy?: 'USER' | 'PROVIDER';
   @Prop({ enum: ['NOT_APPLICABLE', 'PENDING', 'SUCCEEDED', 'FAILED'] }) refundStatus?: string;

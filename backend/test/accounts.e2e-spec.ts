@@ -492,7 +492,7 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([method, operation]) => ({ path, method, operation })),
     );
-    expect(operations).toHaveLength(128);
+    expect(operations).toHaveLength(133);
     expect(document.paths).toEqual(
       expect.objectContaining({
         '/api/payments/webhook': expect.objectContaining({ post: expect.any(Object) }),

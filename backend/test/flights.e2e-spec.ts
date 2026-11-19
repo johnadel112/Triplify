@@ -12,6 +12,7 @@ import { User } from '../src/users/user.schema';
 import { Airport } from '../src/reference-data/reference.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
 import { configureApp } from '../src/bootstrap';
+import { FlightBookingsService } from '../src/flight-bookings/flight-bookings.service';
 import { FlightBooking } from '../src/flight-bookings/flight-booking.schema';
 import { Notification } from '../src/notifications/notifications.schema';
 import { RefundBookingSource } from '../src/payments/refund-booking-source';
@@ -30,6 +31,8 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     t.set('Origin', 'http://localhost:5173').set('X-Triplify-CSRF', '1');
   const post = (path: string, cookies: string[] = []) =>
     csrf(request(server()).post(`/api${path}`)).set('Cookie', cookies);
+  const put = (path: string, cookies: string[] = []) =>
+    csrf(request(server()).put(`/api${path}`)).set('Cookie', cookies);
   const patch = (path: string, cookies: string[] = []) =>
     csrf(request(server()).patch(`/api${path}`)).set('Cookie', cookies);
   const get = (path: string) => request(server()).get(`/api${path}`);
@@ -67,7 +70,10 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     arrivalAirportCode: 'JFK',
     departureTimeLocal: inDays(20, '10:30'),
     arrivalTimeLocal: inDays(20, '18:45'),
-    cabins: { economy: { seatCount: 2, price: 320 }, business: { seatCount: 1, price: 900 } },
+    cabins: {
+      economy: { seatCount: 2, price: 320, freeBags: 1, maxBagWeightKg: 23 },
+      business: { seatCount: 1, price: 900, freeBags: 2, maxBagWeightKg: 32 },
+    },
   });
 
   beforeAll(async () => {
@@ -152,7 +158,9 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     const updated = await patch(`/flights/${id}`, mod.cookies)
       .send({ cabins: { economy: { seatCount: 0, price: 350 } }, extraBaggagePricePerKg: 12 })
       .expect(200);
-    expect(updated.body.cabins.economy).toEqual({ seatCount: 0, price: 350 });
+    // The cabin's baggage allowance and the untouched business cabin are kept.
+    expect(updated.body.cabins.economy).toEqual({ seatCount: 0, price: 350, freeBags: 1, maxBagWeightKg: 23 });
+    expect(updated.body.cabins.business).toMatchObject({ seatCount: 1, price: 900 });
     const stored = await flights.findById(id).lean();
     expect(stored).toMatchObject({
       flightNumber: 'MS777',
@@ -404,6 +412,93 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
       );
       const found = await get('/flights/search?origin=CAI&destination=JFK').expect(200);
       expect(found.body.outbound).toHaveLength(0);
+    });
+  });
+
+  describe('FLT-04, FLT-08, FLT-09, FLT-19: baggage allowance, extra bags and day-based cancellation tiers', () => {
+    it('requires a free baggage allowance and max bag weight per cabin when creating a flight', async () => {
+      const mod = await moderator();
+      await post('/flights', mod.cookies)
+        .send({ ...validFlight(), cabins: { economy: { seatCount: 5, price: 100 } } })
+        .expect(400);
+      await post('/flights', mod.cookies)
+        .send({ ...validFlight(), cabins: { economy: { seatCount: 5, price: 100, freeBags: -1, maxBagWeightKg: 23 } } })
+        .expect(400);
+    });
+
+    it('lets only the airline\'s own moderator set baggage and cancellation policies', async () => {
+      const mod = await moderator();
+      const other = await moderator();
+      const airlineId = mod.user.providerId!.toString();
+      const bag = await put(`/airlines/${airlineId}/baggage-policy`, mod.cookies)
+        .send({ extraBagPrice: 45, maxExtraBagsPerPassenger: 2 })
+        .expect(200);
+      expect(bag.body.baggagePolicy).toEqual({ extraBagPrice: 45, maxExtraBagsPerPassenger: 2 });
+      await put(`/airlines/${airlineId}/baggage-policy`, other.cookies)
+        .send({ extraBagPrice: 1, maxExtraBagsPerPassenger: 1 })
+        .expect(403);
+      await put(`/airlines/${airlineId}/baggage-policy`, mod.cookies).send({ extraBagPrice: 0 }).expect(400);
+      await put(`/airlines/${airlineId}/baggage-policy`).send({ extraBagPrice: 5, maxExtraBagsPerPassenger: 1 }).expect(401);
+
+      await put(`/airlines/${airlineId}/cancellation-policy`, mod.cookies)
+        .send({ tiers: [{ daysBefore: 7, refundPercentage: 100 }, { daysBefore: 7, refundPercentage: 50 }] })
+        .expect(400);
+      await put(`/airlines/${airlineId}/cancellation-policy`, mod.cookies)
+        .send({ tiers: [{ daysBefore: 1, refundPercentage: 101 }] })
+        .expect(400);
+      const tiers = await put(`/airlines/${airlineId}/cancellation-policy`, mod.cookies)
+        .send({ tiers: [{ daysBefore: 1, refundPercentage: 25 }, { daysBefore: 7, refundPercentage: 100 }] })
+        .expect(200);
+      expect(tiers.body.cancellationTiers).toEqual([
+        { daysBefore: 7, refundPercentage: 100 },
+        { daysBefore: 1, refundPercentage: 25 },
+      ]);
+      await put(`/airlines/${airlineId}/cancellation-policy`, other.cookies)
+        .send({ tiers: [{ daysBefore: 1, refundPercentage: 0 }] })
+        .expect(403);
+    });
+
+    it('prices extra bags per bag, enforces the per-passenger maximum and snapshots the airline policies', async () => {
+      const mod = await moderator();
+      const airlineId = mod.user.providerId!.toString();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const service = app.get(FlightBookingsService);
+      const traveler = await users.create({
+        name: 'Traveler',
+        email: `${new Types.ObjectId().toString()}@example.com`,
+        passwordHash,
+        role: UserRole.USER,
+      });
+      const draftWith = (extraBags: number) =>
+        service.createDraft(traveler.id as string, {
+          legs: [{ flightId: created.body._id as string, cabinClass: 'economy' }],
+          passengers: [
+            { firstName: 'A', lastName: 'B', dateOfBirth: '1990-01-01', passportNumber: 'X1', type: 'adult', extraBags },
+          ],
+        });
+
+      await expect(draftWith(1)).rejects.toThrow('does not sell extra bags');
+      await put(`/airlines/${airlineId}/baggage-policy`, mod.cookies)
+        .send({ extraBagPrice: 45, maxExtraBagsPerPassenger: 2 })
+        .expect(200);
+      await put(`/airlines/${airlineId}/cancellation-policy`, mod.cookies)
+        .send({ tiers: [{ daysBefore: 7, refundPercentage: 100 }, { daysBefore: 2, refundPercentage: 50 }] })
+        .expect(200);
+      await expect(draftWith(3)).rejects.toThrow('At most 2 extra bags');
+
+      const draft = await draftWith(2);
+      expect(draft.legs[0].baggageCost).toBe(90);
+      expect(draft.totalPrice).toBe(410);
+      expect(draft.passengers[0].extraBags).toBe(2);
+      expect(draft.cancellationPolicy).toEqual([
+        { hoursBeforeDeparture: 168, refundPercentage: 100 },
+        { hoursBeforeDeparture: 48, refundPercentage: 50 },
+      ]);
+      expect(draft.baggagePolicy).toMatchObject({
+        extraBagPrice: 45,
+        maxExtraBagsPerPassenger: 2,
+        legs: [{ cabinClass: 'economy', freeBags: 1, maxBagWeightKg: 23 }],
+      });
     });
   });
 });
