@@ -3,6 +3,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 export class Country {
   @Prop({ required: true, unique: true, match: /^[A-Z]{2}$/ }) code!: string;
   @Prop({ required: true }) name!: string;
+  /** Official Countries.csv `currency` column (ISO 4217). */
+  @Prop({ required: true, match: /^[A-Z]{3}$/ }) currency!: string;
 }
 @Schema()
 export class City {
@@ -25,7 +27,15 @@ export class Currency {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, min: 0, max: 4 }) minorUnits!: number;
 }
+/** Official Attractions.csv: `attraction_id` -> code, `city_id` -> city (City.code). */
+@Schema()
+export class Attraction {
+  @Prop({ required: true, unique: true }) code!: string;
+  @Prop({ required: true }) name!: string;
+  @Prop({ required: true, index: true }) city!: string;
+}
 export const CountrySchema = SchemaFactory.createForClass(Country);
 export const CitySchema = SchemaFactory.createForClass(City);
 export const AirportSchema = SchemaFactory.createForClass(Airport);
 export const CurrencySchema = SchemaFactory.createForClass(Currency);
+export const AttractionSchema = SchemaFactory.createForClass(Attraction);
