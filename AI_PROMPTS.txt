@@ -347,3 +347,12 @@ Prompt:
 How the output was used:
 Confirmed HTL-23 review rules were already correct. Paginated flight search, my itineraries, hotel room lists and a flight's booking list at 10 per page and documented the flight-booking list parameters in Swagger. Added adult/child/infant counts to flight search (infants need no seat), a flight details response with airline, local times, duration and per-cabin seats and baggage (no internal ids), hotel sorting by price or rating, and the ITN-03 order by most recently updated. Posts and public itineraries of deactivated accounts are now hidden from public pages, likes, comments and cloning. Added 7 e2e tests; 121 unit and 117 e2e tests pass.
 ================================================
+Date: 2026-11-20
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-01, ACC-15, ACC-16, ITN-01, ITN-05, ITN-12, GEN-08 (PR #23)
+Prompt:
+"Is there anything missing again?"
+How the output was used:
+Checked the remaining mandatory requirements line by line. Found that admin actions wrote notification entries to the outbox but nothing ever sent them, so suspended users, moderators and travelers with bookings at a deactivated hotel or airline were never notified; added a sender that runs every minute, claims each entry once and notifies the affected people. Itinerary countries and day cities are now checked against the reference lists. Activity images now accept only real JPG/PNG content under server-generated names (WebP and disguised files are rejected) and are served by URL: publicly for public itineraries, and to the owner or an admin otherwise. Added 4 e2e tests; 121 unit and 120 e2e tests pass.
+================================================

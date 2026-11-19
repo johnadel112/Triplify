@@ -38,6 +38,11 @@ import {
   renumberAndRecalculateDays,
 } from './itineraries.schema';
 import { FxRatesService } from './fx-rates.service';
+import { join } from 'path';
+import { MEDIA_FILE_NAME, mediaDir, prepareImages, removeImage, storeImages } from '../common/media';
+
+const ACTIVITY_MEDIA_FOLDER = 'activities';
+const ACTIVITY_MEDIA_PREFIX = '/api/activities/media/';
 
 @Injectable()
 export class ItinerariesService {
@@ -57,6 +62,7 @@ export class ItinerariesService {
     if (!dto.countries || dto.countries.length === 0) {
       throw new BadRequestException('At least one country must be specified');
     }
+    await this.assertKnownCountries(dto.countries);
 
     const itinerary = new this.itineraryModel({
       userId: new Types.ObjectId(actor.id),
@@ -138,6 +144,7 @@ export class ItinerariesService {
     if (dto.title !== undefined) itinerary.title = dto.title.trim();
     if (dto.description !== undefined) itinerary.description = dto.description.trim();
     if (dto.countries !== undefined) {
+      await this.assertKnownCountries(dto.countries);
       if (dto.countries.length === 0) {
         throw new BadRequestException('At least one country must be specified');
       }
@@ -186,11 +193,9 @@ export class ItinerariesService {
     this.assertOwnership(actor, itinerary);
 
     const cityCode = dto.cityCode.trim().toLowerCase();
-    let cityName = dto.cityName?.trim();
-    if (!cityName) {
-      const cityDoc = await this.cityModel.findOne({ code: cityCode });
-      if (cityDoc) cityName = cityDoc.name;
-    }
+    // ITN-05: the city comes from the predefined list shared with hotels and airports.
+    const cityDoc = await this.knownCity(cityCode);
+    const cityName = dto.cityName?.trim() || cityDoc.name;
 
     const newDay: ItineraryDay = {
       _id: new Types.ObjectId(),
@@ -233,13 +238,9 @@ export class ItinerariesService {
 
     if (dto.cityCode !== undefined) {
       const cityCode = dto.cityCode.trim().toLowerCase();
+      const cityDoc = await this.knownCity(cityCode);
       day.cityCode = cityCode;
-      let cityName = dto.cityName?.trim();
-      if (!cityName) {
-        const cityDoc = await this.cityModel.findOne({ code: cityCode });
-        if (cityDoc) cityName = cityDoc.name;
-      }
-      day.cityName = cityName;
+      day.cityName = dto.cityName?.trim() || cityDoc.name;
     }
 
     if (dto.cityName !== undefined && dto.cityCode === undefined) {
@@ -410,11 +411,7 @@ export class ItinerariesService {
     return { success: true, message: 'Activity deleted successfully' };
   }
 
-  async uploadActivityImages(
-    actor: Principal,
-    activityId: string,
-    files: Array<{ filename: string; originalname: string; mimetype: string; size: number }>,
-  ) {
+  async uploadActivityImages(actor: Principal, activityId: string, files: Express.Multer.File[]) {
     if (!Types.ObjectId.isValid(activityId)) {
       throw new BadRequestException('Invalid activity ID');
     }
@@ -448,31 +445,46 @@ export class ItinerariesService {
       throw new BadRequestException('An activity can have at most 5 images');
     }
 
-    for (const file of files) {
-      const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-      if (!allowedMimes.includes(file.mimetype)) {
-        throw new BadRequestException(
-          `Invalid file type: ${file.mimetype}. Allowed: JPEG, PNG, WebP.`,
-        );
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        throw new BadRequestException('Image file size must not exceed 5MB');
-      }
-
+    // GEN-08: real JPG/PNG content (not just the declared type), <= 5 MB, stored under a server-side name.
+    const prepared = prepareImages(files);
+    const rollback = await storeImages(ACTIVITY_MEDIA_FOLDER, prepared);
+    prepared.forEach((image, index) => {
       const img: ActivityImage = {
         _id: new Types.ObjectId(),
-        url: `/uploads/activities/${file.filename}`,
-        filename: file.filename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
+        url: `${ACTIVITY_MEDIA_PREFIX}${image.filename}`,
+        filename: image.filename,
+        originalName: files[index].originalname.slice(0, 150),
+        mimeType: image.filename.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        size: files[index].size,
         uploadedAt: new Date(),
       };
       targetActivity.images.push(img);
-    }
+    });
 
-    await itinerary.save();
+    try {
+      await itinerary.save();
+    } catch (error) {
+      await rollback();
+      throw error;
+    }
     return targetActivity;
+  }
+
+  /**
+   * GEN-08: an activity image is served publicly while its itinerary is public and visible;
+   * the owner and admins can always see it.
+   */
+  async activityImagePath(filename: string, actor?: Principal) {
+    if (!MEDIA_FILE_NAME.test(filename)) throw new NotFoundException('Image not found');
+    const itinerary = await this.itineraryModel
+      .findOne({ 'days.activities.images.filename': filename })
+      .select('userId isPublic hidden')
+      .lean();
+    if (!itinerary) throw new NotFoundException('Image not found');
+    const visible = itinerary.isPublic && !itinerary.hidden && !(await this.ownerDeactivated(itinerary.userId));
+    const allowed = visible || (actor && (actor.role === UserRole.ADMIN || itinerary.userId.toString() === actor.id));
+    if (!allowed) throw new NotFoundException('Image not found');
+    return join(mediaDir(ACTIVITY_MEDIA_FOLDER), filename);
   }
 
   async deleteActivityImage(actor: Principal, activityId: string, imageId: string) {
@@ -500,14 +512,14 @@ export class ItinerariesService {
       throw new NotFoundException('Activity not found');
     }
 
-    const initialLength = targetActivity.images.length;
-    targetActivity.images = targetActivity.images.filter((img) => img._id.toString() !== imageId);
-
-    if (targetActivity.images.length === initialLength) {
+    const removedImage = targetActivity.images.find((img) => img._id.toString() === imageId);
+    if (!removedImage) {
       throw new NotFoundException('Image not found in activity');
     }
+    targetActivity.images = targetActivity.images.filter((img) => img._id.toString() !== imageId);
 
     await itinerary.save();
+    await removeImage(ACTIVITY_MEDIA_FOLDER, removedImage.filename);
     return { success: true, message: 'Activity image deleted successfully' };
   }
 
@@ -1065,6 +1077,22 @@ export class ItinerariesService {
         },
       })),
     };
+  }
+
+  /** ITN-01: countries must come from the predefined reference list. */
+  private async assertKnownCountries(countries: string[]) {
+    const codes = [...new Set(countries.map((c) => c.trim().toUpperCase()))];
+    const known = await this.countryModel.countDocuments({ code: { $in: codes } });
+    if (known !== codes.length) {
+      throw new BadRequestException('Countries must be selected from the predefined country list');
+    }
+  }
+
+  /** ITN-05: cities must come from the predefined reference list. */
+  private async knownCity(cityCode: string) {
+    const city = await this.cityModel.findOne({ code: cityCode }).lean();
+    if (!city) throw new BadRequestException('City must be selected from the predefined city list');
+    return city;
   }
 
   /** ACC-12: ids of deactivated accounts, whose public itineraries are hidden. */

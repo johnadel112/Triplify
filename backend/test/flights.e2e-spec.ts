@@ -9,7 +9,7 @@ import request from 'supertest';
 import { hash } from 'bcryptjs';
 import { UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
-import { Airport } from '../src/reference-data/reference.schema';
+import { Airport, City, Country } from '../src/reference-data/reference.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
 import { configureApp } from '../src/bootstrap';
 import { FlightBookingsService } from '../src/flight-bookings/flight-bookings.service';
@@ -659,6 +659,9 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
       await app.get<Model<Airport>>(getModelToken(Airport.name)).create({
         iataCode: 'EWR', name: 'Newark', city: 'nyc', country: 'US', timeZone: 'America/New_York',
       });
+      // ITN-01/ITN-05: itinerary countries and cities come from the reference lists.
+      await app.get<Model<Country>>(getModelToken(Country.name)).create({ code: 'US', name: 'United States', currency: 'USD' });
+      await app.get<Model<City>>(getModelToken(City.name)).create({ code: 'nyc', name: 'New York', country: 'US', timeZone: 'America/New_York' });
       const mod = await moderator();
       const startDate = validFlight().departureTimeLocal.slice(0, 10);
       await post('/flights', mod.cookies)

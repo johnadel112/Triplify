@@ -21,7 +21,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
   let mockItineraryModel: MockModel;
   let mockUserModel: { findById: jest.Mock; exists: jest.Mock; find: jest.Mock };
   let mockCityModel: { findOne: jest.Mock };
-  let mockCountryModel: { findOne: jest.Mock };
+  let mockCountryModel: { findOne: jest.Mock; countDocuments: jest.Mock };
   let mockConfigService: { get: jest.Mock };
 
   const actorUser: Principal = {
@@ -81,6 +81,8 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
     mockCountryModel = {
       findOne: jest.fn(),
+      // ITN-01: every requested country is in the reference list.
+      countDocuments: jest.fn((filter: { code: { $in: string[] } }) => Promise.resolve(filter.code.$in.length)),
     };
 
     service = new ItinerariesService(
@@ -182,7 +184,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       };
 
       mockItineraryModel.findById.mockResolvedValue(itineraryDoc);
-      mockCityModel.findOne.mockResolvedValue({ name: 'Paris' });
+      mockCityModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ code: 'paris', name: 'Paris' }) });
 
       // Mock getItineraryById response
       jest.spyOn(service, 'getItineraryById').mockResolvedValue({

@@ -15,6 +15,7 @@ import { configureApp } from '../src/bootstrap';
 import { Payment } from '../src/payments/payments.schema';
 import { RefundsService } from '../src/payments/refunds.service';
 import { RoomNightLock } from '../src/hotel-bookings/hotel-booking.schema';
+import { City, Country } from '../src/reference-data/reference.schema';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -155,6 +156,9 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
     app.get<ThrottlerStorageService>(ThrottlerStorage).onApplicationShutdown();
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.deleteMany({})));
+    // ITN-01/ITN-05: itinerary countries and cities come from the reference lists.
+    await app.get<Model<Country>>(getModelToken(Country.name)).create({ code: 'EG', name: 'Egypt', currency: 'EGP' });
+    await app.get<Model<City>>(getModelToken(City.name)).create({ code: 'cairo', name: 'Cairo', country: 'EG', timeZone: 'Africa/Cairo' });
     now = new Date();
   });
 
@@ -430,6 +434,54 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
       expect(first.body.items).toHaveLength(10);
       expect(first.body.items[0].title).toBe('Edited trip');
       expect((await get('/itineraries?page=2', traveler.cookies).expect(200)).body.items).toHaveLength(1);
+    });
+  });
+
+  describe('Audit gaps 3: ITN-01/ITN-05 reference lists, ITN-12/GEN-08 activity images', () => {
+    const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(64, 3)]);
+    const del = (path: string, cookies: string[] = []) =>
+      csrf(request(server()).delete(`/api${path}`)).set('Cookie', cookies);
+
+    it('ITN-01, ITN-05: countries and cities must come from the reference lists', async () => {
+      const traveler = await account();
+      await post('/itineraries', traveler.cookies).send({ title: 'Nowhere', countries: ['ZZ'], startDate: day(10) }).expect(400);
+      const itn = await post('/itineraries', traveler.cookies).send({ title: 'Egypt', countries: ['EG'], startDate: day(10) }).expect(201);
+      const id = String(itn.body._id ?? itn.body.id);
+      await patch(`/itineraries/${id}`, traveler.cookies).send({ countries: ['EG', 'ZZ'] }).expect(400);
+      await post(`/itineraries/${id}/days`, traveler.cookies).send({ cityCode: 'atlantis' }).expect(400);
+      const added = await post(`/itineraries/${id}/days`, traveler.cookies).send({ cityCode: 'cairo' }).expect(201);
+      expect(JSON.stringify(added.body)).toContain('"cityName":"Cairo"');
+    });
+
+    it('ITN-12, GEN-08: activity images are real JPG/PNG files, served for public itineraries and to their owner', async () => {
+      const owner = await account();
+      const stranger = await account();
+      const itn = await post('/itineraries', owner.cookies).send({ title: 'Images', countries: ['EG'], startDate: day(10) }).expect(201);
+      const id = String(itn.body._id ?? itn.body.id);
+      await post(`/itineraries/${id}/days`, owner.cookies).send({ cityCode: 'cairo' }).expect(201);
+      const dayId = String((await get(`/itineraries/${id}`, owner.cookies).expect(200)).body.days[0]._id);
+      await post(`/itineraries/${id}/days/${dayId}/activities`, owner.cookies).send({ title: 'Pyramids' }).expect(201);
+      const activityId = String((await get(`/itineraries/${id}`, owner.cookies).expect(200)).body.days[0].activities[0]._id);
+      const upload = (data: Buffer, name: string, type: string) =>
+        post(`/activities/${activityId}/images`, owner.cookies).attach('images', data, { filename: name, contentType: type });
+
+      await upload(Buffer.from('RIFF0000WEBPVP8 '), 'photo.webp', 'image/webp').expect(400);
+      await upload(Buffer.from('<script>alert(1)</script>'), 'evil.html', 'image/png').expect(400);
+      const uploaded = await upload(PNG, 'photo.png', 'image/png').expect(201);
+      const image = uploaded.body.images[0] as { _id: string; url: string; filename: string };
+      expect(image.url).toMatch(/^\/api\/activities\/media\/[\da-f-]{36}\.png$/);
+
+      // Private itinerary: only the owner (logged-in route) can see the image.
+      await get(`/activities/media/${image.filename}`).expect(404);
+      await get(`/activities/my-media/${image.filename}`, owner.cookies).expect(200);
+      await get(`/activities/my-media/${image.filename}`, stranger.cookies).expect(404);
+      // Public itinerary: anyone can see it.
+      await patch(`/itineraries/${id}`, owner.cookies).send({ isPublic: true }).expect(200);
+      const served = await get(`/activities/media/${image.filename}`).expect(200);
+      expect(served.headers['content-type']).toMatch(/image\/png/);
+
+      await del(`/activities/${activityId}/images/${image._id}`, owner.cookies).expect(200);
+      await get(`/activities/media/${image.filename}`).expect(404);
     });
   });
 });
