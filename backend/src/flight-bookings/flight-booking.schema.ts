@@ -51,6 +51,8 @@ export class FlightBooking {
   @Prop({ type: Date }) confirmedAt?: Date;
   @Prop({ type: Date }) cancelledAt?: Date;
   @Prop({ type: Number }) refundAmount?: number;
+  /** FLT-06: PROVIDER when the airline cancelled the flight (refunded in full). */
+  @Prop({ type: String, enum: ['USER', 'PROVIDER'] }) cancelledBy?: 'USER' | 'PROVIDER';
   @Prop({ enum: ['NOT_APPLICABLE', 'PENDING', 'SUCCEEDED', 'FAILED'] }) refundStatus?: string;
   @Prop() refundId?: string;
 }

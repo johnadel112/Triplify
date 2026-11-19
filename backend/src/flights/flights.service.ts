@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
   ForbiddenException,
   Inject,
@@ -184,10 +185,14 @@ export class FlightsService {
       sortBy,
     } = queryDto;
 
+    const now = new Date();
     const query: FilterQuery<Flight> = {
       departureAirport: origin,
       arrivalAirport: destination,
       [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
+      // FLT-30: only Scheduled flights that have not departed are searchable.
+      status: 'SCHEDULED',
+      departureTimeUtc: { $gt: now },
     };
     const activeProfiles = await this.airlineModel
       .find({ active: true, verified: true })
@@ -212,6 +217,8 @@ export class FlightsService {
         arrivalAirport: origin,
         departureDate: returnDate,
         [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
+        status: 'SCHEDULED',
+        departureTimeUtc: { $gt: now },
         airlineId: { $in: activeAirlines },
       };
       returnFlights = await this.flightModel.find(returnQuery).exec();
@@ -247,6 +254,10 @@ export class FlightsService {
 
     if (![airlineId, legacyModeratorId].includes(flight.airlineId?.toString())) {
       throw new ForbiddenException('You can only modify flights belonging to your airline.');
+    }
+
+    if (flight.status !== 'SCHEDULED') {
+      throw new ConflictException('Only Scheduled flights can be edited.');
     }
 
     if ((updateDto.departureAirport || updateDto.arrivalAirport) && flight.hasConfirmedBookings) {

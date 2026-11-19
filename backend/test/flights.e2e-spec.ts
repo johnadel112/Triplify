@@ -12,6 +12,10 @@ import { User } from '../src/users/user.schema';
 import { Airport } from '../src/reference-data/reference.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
 import { configureApp } from '../src/bootstrap';
+import { FlightBooking } from '../src/flight-bookings/flight-booking.schema';
+import { Notification } from '../src/notifications/notifications.schema';
+import { RefundBookingSource } from '../src/payments/refund-booking-source';
+import { BookingType } from '../src/payments/payments.constants';
 
 /** Flight management and search (FLT-01, FLT-03..05, FLT-11) request validation. */
 describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () => {
@@ -248,5 +252,158 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     const other = await moderator();
     await patch('/flights/airline-profile', other.cookies).send({ name: 'Mine' }).expect(200);
     expect((await get(`/airlines/${airline.body.id as string}`)).body.name).toBe('Nile Air');
+  });
+
+  describe('FLT-06, FLT-29, FLT-30: provider cancellation, moderator views, searchable status', () => {
+    const getAs = (path: string, cookies: string[]) =>
+      request(server()).get(`/api${path}`).set('Cookie', cookies);
+
+    async function bookingFor(
+      flightId: string,
+      status: 'CONFIRMED' | 'PENDING',
+      firstName: string,
+      cabinClass = 'economy',
+    ) {
+      const traveler = await users.create({
+        name: firstName,
+        email: `${new Types.ObjectId().toString()}@example.com`,
+        passwordHash,
+        role: UserRole.USER,
+      });
+      const departure = new Date(Date.now() + 20 * 86400000);
+      return app.get<Model<FlightBooking>>(getModelToken(FlightBooking.name)).create({
+        userId: traveler._id,
+        reference: `T${new Types.ObjectId().toString().slice(-7).toUpperCase()}`,
+        status,
+        legs: [
+          {
+            flightId: new Types.ObjectId(flightId),
+            flightNumber: 'MS777',
+            cabinClass,
+            departureAirport: 'CAI',
+            arrivalAirport: 'JFK',
+            departureTime: departure,
+            arrivalTime: new Date(departure.getTime() + 8 * 3600000),
+            farePerSeat: 320,
+            baggageCost: 0,
+            legTotal: 320,
+          },
+        ],
+        passengers: [
+          {
+            firstName,
+            lastName: 'Tester',
+            dateOfBirth: new Date('1990-01-01'),
+            passportNumber: 'P1',
+            type: 'adult',
+          },
+        ],
+        seatCount: 1,
+        currency: 'USD',
+        totalPrice: 320,
+        firstDeparture: departure,
+        lastDeparture: departure,
+        holdExpiresAt: status === 'PENDING' ? new Date(Date.now() + 600000) : undefined,
+      });
+    }
+
+    it("lists a flight's bookings and exports confirmed passengers only to its own airline", async () => {
+      const mod = await moderator();
+      const other = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const flightId = created.body._id as string;
+      await bookingFor(flightId, 'CONFIRMED', 'Amira');
+      await bookingFor(flightId, 'CONFIRMED', 'Omar', 'business');
+
+      const list = await getAs(`/flights/${flightId}/bookings`, mod.cookies).expect(200);
+      expect(list.body.total).toBe(2);
+      expect(list.body.flight.seatsRemaining).toMatchObject({ economy: 2, business: 1 });
+      expect(list.body.bookings.map((b: { cabinClass: string }) => b.cabinClass).sort()).toEqual([
+        'business',
+        'economy',
+      ]);
+      expect(list.body.bookings[0].passengers[0].name).toMatch(/Tester$/);
+
+      const csv = await getAs(`/flights/${flightId}/passengers/export`, mod.cookies).expect(200);
+      expect(csv.headers['content-type']).toMatch(/text\/csv/);
+      expect(csv.text.split('\r\n').filter(Boolean)).toHaveLength(3);
+      expect(csv.text).toContain('"Amira Tester"');
+
+      await getAs(`/flights/${flightId}/bookings`, other.cookies).expect(403);
+      await getAs(`/flights/${flightId}/passengers/export`, other.cookies).expect(403);
+      await request(server()).get(`/api/flights/${flightId}/bookings`).expect(401);
+    });
+
+    it('cancels a Scheduled flight: bookings cancelled with full refund, holds released, users notified, hidden from search', async () => {
+      const mod = await moderator();
+      const other = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const flightId = created.body._id as string;
+      const confirmed = await bookingFor(flightId, 'CONFIRMED', 'Laila');
+      const held = await bookingFor(flightId, 'PENDING', 'Karim');
+      const date = validFlight().departureTimeLocal.slice(0, 10);
+      expect(
+        (await get(`/flights/search?origin=CAI&destination=JFK&date=${date}`)).body.outbound,
+      ).toHaveLength(1);
+
+      await post(`/flights/${flightId}/cancel`, mod.cookies).send({}).expect(400);
+      await post(`/flights/${flightId}/cancel`, other.cookies)
+        .send({ confirmation: true })
+        .expect(403);
+      const result = await post(`/flights/${flightId}/cancel`, mod.cookies)
+        .send({ confirmation: true })
+        .expect(200);
+      expect(result.body).toMatchObject({
+        status: 'CANCELLED',
+        cancelledBookings: 1,
+        releasedHolds: 1,
+        refundsRequested: 1,
+      });
+
+      expect((await flights.findById(flightId).lean())!.status).toBe('CANCELLED');
+      const bookings = app.get<Model<FlightBooking>>(getModelToken(FlightBooking.name));
+      expect(await bookings.findById(confirmed._id).lean()).toMatchObject({
+        status: 'CANCELLED',
+        cancelledBy: 'PROVIDER',
+        refundAmount: 320,
+        refundStatus: 'PENDING',
+      });
+      expect((await bookings.findById(held._id).lean())!.status).toBe('EXPIRED');
+      const notes = app.get<Model<Notification>>(getModelToken(Notification.name));
+      expect(
+        await notes.countDocuments({ userId: confirmed.userId, type: 'BOOKING_CANCELLED' }),
+      ).toBe(1);
+      expect(await notes.countDocuments({ userId: held.userId, type: 'BOOKING_CANCELLED' })).toBe(
+        1,
+      );
+
+      // PAY-03: the refund source treats it as a provider cancellation at 100%.
+      const quote = await app
+        .get(RefundBookingSource)
+        .quote(String(confirmed.userId), BookingType.FLIGHT, String(confirmed._id));
+      expect(quote).toMatchObject({ reason: 'PROVIDER_CANCELLATION', amountCents: 32000 });
+
+      // FLT-30: no longer searchable, editable or cancellable.
+      expect(
+        (await get(`/flights/search?origin=CAI&destination=JFK&date=${date}`)).body.outbound,
+      ).toHaveLength(0);
+      await patch(`/flights/${flightId}`, mod.cookies)
+        .send({ extraBaggagePricePerKg: 5 })
+        .expect(409);
+      await post(`/flights/${flightId}/cancel`, mod.cookies)
+        .send({ confirmation: true })
+        .expect(409);
+    });
+
+    it('does not return flights that have already departed in search', async () => {
+      const mod = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      await flights.updateOne(
+        { _id: created.body._id },
+        { $set: { departureTimeUtc: new Date(Date.now() - 3600000) } },
+      );
+      const found = await get('/flights/search?origin=CAI&destination=JFK').expect(200);
+      expect(found.body.outbound).toHaveLength(0);
+    });
   });
 });

@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ConflictException, Inject, Injectable, Logger,
+  BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger,
   NotFoundException, Optional,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -347,6 +347,131 @@ export class FlightBookingsService {
   // For Yassin's FLT-29 (moderator sees bookings of a flight)
   async findConfirmedByFlight(flightId: string) {
     return this.bookings.find({ status: 'CONFIRMED', 'legs.flightId': toOid(flightId) }).lean();
+  }
+
+  /** The flight, if it belongs to one of the moderator's airline ids (providerId or legacy user id). */
+  private async ownedFlight(flightId: string, airlineIds: string[]) {
+    const flight = (await this.flights.findById(toOid(flightId)).lean()) as unknown as {
+      _id: Types.ObjectId; flightNumber: string; status?: string; airlineId?: Types.ObjectId;
+      departureTimeUtc: Date; cabins?: Record<string, { seatCount: number; price: number } | undefined>;
+    } | null;
+    if (!flight) throw new NotFoundException('Flight not found');
+    if (!airlineIds.includes(String(flight.airlineId))) {
+      throw new ForbiddenException('You can only manage flights of your own airline');
+    }
+    return flight;
+  }
+
+  // ---------- FLT-29: bookings and passengers of one flight, for its airline moderator ----------
+  async bookingsForFlight(flightId: string, airlineIds: string[]) {
+    const flight = await this.ownedFlight(flightId, airlineIds);
+    const rows = await this.bookings
+      .find({ 'legs.flightId': flight._id, status: { $in: ['CONFIRMED', 'CANCELLED'] } })
+      .sort({ confirmedAt: 1, _id: 1 })
+      .lean();
+    return {
+      flight: {
+        id: String(flight._id),
+        flightNumber: flight.flightNumber,
+        status: flight.status,
+        departureTimeUtc: flight.departureTimeUtc,
+        seatsRemaining: Object.fromEntries(
+          Object.entries(flight.cabins ?? {}).flatMap(([cabin, c]) => (c ? [[cabin, c.seatCount]] : [])),
+        ),
+      },
+      total: rows.length,
+      bookings: rows.map((b) => ({
+        reference: b.reference,
+        status: b.status,
+        cabinClass: b.legs.find((l) => String(l.flightId) === String(flight._id))?.cabinClass,
+        seats: b.seatCount,
+        passengers: b.passengers.map((p) => ({ name: `${p.firstName} ${p.lastName}`, type: p.type })),
+        confirmedAt: b.confirmedAt,
+        cancelledAt: b.cancelledAt,
+      })),
+    };
+  }
+
+  /** FLT-29: CSV manifest of passengers on confirmed bookings. */
+  async passengerManifestCsv(flightId: string, airlineIds: string[]) {
+    const { flight, bookings } = await this.bookingsForFlight(flightId, airlineIds);
+    const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['flight', 'reference', 'passenger', 'type', 'cabin'].map(cell).join(',')];
+    for (const b of bookings.filter((x) => x.status === 'CONFIRMED'))
+      for (const p of b.passengers)
+        lines.push([flight.flightNumber, b.reference, p.name, p.type, b.cabinClass].map(cell).join(','));
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  // ---------- FLT-06: airline cancels a Scheduled flight ----------
+  async cancelFlightByProvider(flightId: string, airlineIds: string[]) {
+    const flight = await this.ownedFlight(flightId, airlineIds);
+    if (flight.status !== 'SCHEDULED') throw new ConflictException('Only Scheduled flights can be cancelled');
+    if (flight.departureTimeUtc <= new Date()) throw new ConflictException('Flight has already departed');
+    const now = new Date();
+    const refundsToRequest: { bookingId: string; userId: string; amount: number }[] = [];
+    let cancelledBookings = 0;
+    let releasedHolds = 0;
+    const session = await this.connection.startSession();
+    try {
+      await session.withTransaction(async () => {
+        refundsToRequest.length = 0;
+        cancelledBookings = 0;
+        releasedHolds = 0;
+        const updated = await this.flights.updateOne(
+          { _id: flight._id, status: 'SCHEDULED' } as unknown as FilterQuery<Flight>,
+          { $set: { status: 'CANCELLED' } },
+          { session },
+        );
+        if (updated.modifiedCount !== 1) throw new ConflictException('Flight is no longer Scheduled');
+        const affected = await this.bookings
+          .find({ 'legs.flightId': flight._id, status: { $in: ['CONFIRMED', 'PENDING'] } })
+          .session(session);
+        for (const booking of affected) {
+          const wasConfirmed = booking.status === 'CONFIRMED';
+          // Seats on the other leg of a round trip go back to inventory.
+          const otherLegs = booking.legs.filter((l) => String(l.flightId) !== String(flight._id));
+          await this.releaseSeats(otherLegs, booking.seatCount, session);
+          if (wasConfirmed) {
+            booking.status = 'CANCELLED';
+            booking.cancelledAt = now;
+            booking.cancelledBy = 'PROVIDER';
+            booking.refundAmount = booking.totalPrice;
+            booking.refundStatus = booking.totalPrice > 0 ? 'PENDING' : 'NOT_APPLICABLE';
+            cancelledBookings += 1;
+            if (booking.totalPrice > 0)
+              refundsToRequest.push({ bookingId: String(booking._id), userId: String(booking.userId), amount: booking.totalPrice });
+          } else {
+            booking.status = 'EXPIRED';
+            booking.holdExpiresAt = undefined;
+            releasedHolds += 1;
+          }
+          await booking.save({ session });
+          await this.notifications.create([{
+            userId: booking.userId,
+            title: 'Flight cancelled by the airline',
+            message: wasConfirmed
+              ? `Flight ${flight.flightNumber} was cancelled. Booking ${booking.reference} is cancelled and refunded in full.`
+              : `Flight ${flight.flightNumber} was cancelled. Your unpaid hold ${booking.reference} was released.`,
+            type: NotificationType.BOOKING_CANCELLED,
+            metadata: { bookingId: String(booking._id), bookingType: BookingType.FLIGHT, reference: booking.reference, flightId: String(flight._id) },
+          }], { session });
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+    // PAY-03: provider cancellations are refunded at 100% after the transaction commits; failed
+    // refunds stay on the durable refund job and are retried by the refunds reconciliation.
+    for (const refund of refundsToRequest) {
+      if (!this.refunds) break;
+      try {
+        await this.refunds.requestRefund({ ...refund, bookingType: 'flight', reason: 'Flight cancelled by the airline' });
+      } catch (error) {
+        this.log.warn(`Refund request for ${refund.bookingId} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      }
+    }
+    return { flightId: String(flight._id), status: 'CANCELLED', cancelledBookings, releasedHolds, refundsRequested: refundsToRequest.length };
   }
 
   // ---------- FLT-23 ----------

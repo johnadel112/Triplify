@@ -29,9 +29,10 @@ export class RefundBookingSource {
       const booking = await this.flights.findOne(filter).lean();
       if (!booking) throw new NotFoundException('Booking not found');
       if (!['CANCELLED', 'EXPIRED'].includes(booking.status)) throw new ConflictException('Cancel the booking before requesting a refund');
-      return { amountCents: Math.round((booking.status === 'EXPIRED' ? booking.totalPrice : booking.refundAmount ?? 0) * 100),
+      const provider = booking.status === 'EXPIRED' || booking.cancelledBy === 'PROVIDER';
+      return { amountCents: Math.round((provider ? booking.totalPrice : booking.refundAmount ?? 0) * 100),
         totalCents: Math.round(booking.totalPrice * 100), currency: booking.currency,
-        reason: booking.status === 'EXPIRED' ? 'PROVIDER_CANCELLATION' as const : 'USER_CANCELLATION' as const };
+        reason: provider ? 'PROVIDER_CANCELLATION' as const : 'USER_CANCELLATION' as const };
     }
     if (type !== BookingType.HOTEL) throw new NotFoundException('Booking not found');
     const booking = await this.hotels.findOne(filter).lean();
