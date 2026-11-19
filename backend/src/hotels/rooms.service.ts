@@ -158,6 +158,23 @@ export class RoomsService {
     return updated;
   }
 
+  /** HTL-06: delete a room unless a Pending or Confirmed reservation uses it. Past reservations keep their room snapshot. */
+  async remove(hotelId: string, roomId: string, actor: Principal) {
+    this.assertModerator(actor, hotelId);
+    await this.requireHotel(hotelId, false);
+    const room = await this.requireRoom(hotelId, roomId);
+    const reserved = await this.bookings.exists({
+      providerId: new Types.ObjectId(hotelId),
+      'rooms.roomId': room._id,
+      status: { $in: PROTECTED_BOOKING_STATUSES },
+    });
+    if (reserved) {
+      throw new ConflictException('Cannot delete a room with pending or confirmed reservations');
+    }
+    await this.rooms.deleteOne({ _id: room._id, hotelId });
+    return { deleted: true, roomId };
+  }
+
   /** HTL-04: Replace a room's future availability ranges; no overlaps allowed. */
   async replaceAvailability(
     hotelId: string,

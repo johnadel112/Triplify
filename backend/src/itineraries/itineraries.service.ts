@@ -1050,6 +1050,12 @@ export class ItinerariesService {
     };
   }
 
+  /** The reference city's display name (hotels store city names). */
+  async cityName(cityCode: string) {
+    const city = await this.cityModel.findOne({ code: cityCode }).lean();
+    return city?.name ?? cityCode;
+  }
+
   // -------------------------------------------------------------
   // ITN-26: Reuse Flight Search for Itinerary-Related Dates
   // -------------------------------------------------------------

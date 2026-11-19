@@ -89,12 +89,18 @@ export class FlightsController {
 
   @Patch(':id')
   @Roles(UserRole.AIRLINE_MODERATOR)
-  @ApiOperation({ summary: 'FLT-05: Edit my Scheduled flight (airports locked once bookings are confirmed)' })
+  @ApiOperation({
+    summary:
+      'FLT-05: Edit my Scheduled flight (local times, prices, seats; airports locked once bookings are confirmed)',
+  })
   async updateFlight(
     @CurrentUser() user: Principal,
     @Param('id', ObjectIdPipe) id: string,
     @Body() dto: UpdateFlightDto,
   ) {
-    return this.flightsService.updateFlight(id, user.providerId!, dto, user.id);
+    const flight = await this.flightsService.updateFlight(id, user.providerId!, dto, user.id);
+    // GEN-01: travelers with bookings on this flight are told about a new schedule.
+    await this.flightBookings.applyScheduleChange(id);
+    return flight;
   }
 }

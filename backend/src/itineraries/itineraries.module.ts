@@ -18,9 +18,13 @@ import { ItinerariesController } from './itineraries.controller';
 import { Itinerary, ItinerarySchema } from './itineraries.schema';
 import { ItinerariesService } from './itineraries.service';
 import { TransportCostsController } from './transport-costs.controller';
+import { HotelsModule } from '../hotels/hotels.module';
+import { FlightsModule } from '../flights/flights.module';
 
 @Module({
   imports: [
+    HotelsModule,
+    FlightsModule,
     MongooseModule.forFeature([
       { name: Itinerary.name, schema: ItinerarySchema },
       { name: User.name, schema: UserSchema },

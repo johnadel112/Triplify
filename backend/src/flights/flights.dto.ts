@@ -126,6 +126,11 @@ export class CancellationTierDto {
 
 /** FLT-01: fields an airline moderator may edit on their own airline profile. */
 export class AirlineProfileDto {
+  @ApiPropertyOptional({ example: 'NA', description: 'Two-character airline code' })
+  @IsOptional()
+  @Matches(/^[A-Z0-9]{2}$/, { message: 'code must be 2 uppercase letters/digits' })
+  code?: string;
+
   @ApiPropertyOptional({ maxLength: 100 })
   @IsOptional()
   @IsString()
@@ -146,6 +151,11 @@ export class AirlineProfileDto {
 
 /** FLT-01: an administrator creates an airline profile. */
 export class CreateAirlineDto {
+  @ApiPropertyOptional({ example: 'NA', description: 'Two-character airline code' })
+  @IsOptional()
+  @Matches(/^[A-Z0-9]{2}$/, { message: 'code must be 2 uppercase letters/digits' })
+  code?: string;
+
   @ApiProperty({ maxLength: 100, example: 'Nile Air' })
   @IsString()
   @MinLength(1)
@@ -212,7 +222,18 @@ export class CreateFlightDto {
  * hasConfirmedBookings are server-controlled and therefore not accepted here.
  */
 export class UpdateFlightDto {
-  @ApiPropertyOptional({ format: 'date-time' })
+  /** FLT-05, GEN-06: new times are entered in each airport's local time, like on creation. */
+  @ApiPropertyOptional({ example: '2026-12-20T11:00', description: 'Local time at the departure airport' })
+  @IsOptional()
+  @Matches(LOCAL_DATE_TIME)
+  departureTimeLocal?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-20T19:15', description: 'Local time at the arrival airport' })
+  @IsOptional()
+  @Matches(LOCAL_DATE_TIME)
+  arrivalTimeLocal?: string;
+
+  @ApiPropertyOptional({ format: 'date-time', description: 'Alternative to departureTimeLocal (UTC)' })
   @IsOptional()
   @IsISO8601({ strict: true })
   departureTimeUtc?: string;
@@ -280,15 +301,22 @@ export class SearchFlightsQuery {
   @Max(9)
   passengers = 1;
 
-  @ApiPropertyOptional({ minimum: 0.01 })
+  @ApiPropertyOptional({ minimum: 0, description: 'FLT-15: inclusive minimum price' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @ApiPropertyOptional({ minimum: 0.01, description: 'FLT-15: inclusive maximum price' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0.01)
   maxPrice?: number;
 
-  @ApiPropertyOptional({ enum: ['price', 'duration'] })
+  @ApiPropertyOptional({ enum: ['price', 'duration', 'departureTime'] })
   @IsOptional()
-  @IsIn(['price', 'duration'])
-  sortBy?: 'price' | 'duration';
+  @IsIn(['price', 'duration', 'departureTime'])
+  sortBy?: 'price' | 'duration' | 'departureTime';
 }

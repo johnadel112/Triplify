@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types, ClientSession } from 'mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Flight, AirlineProfile } from './flights.schema';
 import { Airport } from '../reference-data/reference.schema';
 import { NOTIFICATION_DELIVERY, NotificationDeliveryPort } from '../integrations/contracts';
@@ -28,6 +29,18 @@ function definedOnly<T extends object>(dto: T): Partial<T> {
   ) as Partial<T>;
 }
 import moment from 'moment-timezone';
+import { join } from 'path';
+import {
+  MEDIA_FILE_NAME,
+  mediaDir,
+  mediaFileName,
+  prepareImages,
+  removeImage,
+  storeImages,
+} from '../common/media';
+
+const AIRLINE_MEDIA_FOLDER = 'airlines';
+const AIRLINE_MEDIA_PREFIX = '/api/airlines/media/';
 
 @Injectable()
 export class FlightsService {
@@ -43,6 +56,7 @@ export class FlightsService {
   async createAirline(dto: CreateAirlineDto) {
     const airline = await this.airlineModel.create({
       name: dto.name,
+      code: dto.code,
       logoUrl: dto.logoUrl,
       contactEmail: dto.contactEmail,
     });
@@ -84,6 +98,32 @@ export class FlightsService {
     return this.publicAirline(airline);
   }
 
+  /** FLT-01, GEN-08: one uploaded JPG/PNG logo (<= 5 MB) per airline; replaces the previous one. */
+  async setLogo(airlineId: string, actorProviderId: string | undefined, file: Express.Multer.File | undefined) {
+    const airline = await this.ownAirline(airlineId, actorProviderId);
+    const [prepared] = prepareImages(file ? [file] : []);
+    const rollback = await storeImages(AIRLINE_MEDIA_FOLDER, [prepared]);
+    const previous = airline.logoUrl ? mediaFileName(airline.logoUrl, AIRLINE_MEDIA_PREFIX) : undefined;
+    try {
+      airline.logoUrl = `${AIRLINE_MEDIA_PREFIX}${prepared.filename}`;
+      await airline.save();
+    } catch (error) {
+      await rollback();
+      throw error;
+    }
+    if (previous) await removeImage(AIRLINE_MEDIA_FOLDER, previous);
+    return this.publicAirline(airline);
+  }
+
+  /** Public: a logo is served only while it is the current logo of an active airline. */
+  async logoPath(filename: string) {
+    if (!MEDIA_FILE_NAME.test(filename) ||
+      !(await this.airlineModel.exists({ logoUrl: `${AIRLINE_MEDIA_PREFIX}${filename}`, active: true }))) {
+      throw new NotFoundException('Logo not found');
+    }
+    return join(mediaDir(AIRLINE_MEDIA_FOLDER), filename);
+  }
+
   private async ownAirline(airlineId: string, actorProviderId: string | undefined) {
     if (!actorProviderId || actorProviderId !== airlineId) {
       throw new ForbiddenException('You can only manage your own airline');
@@ -97,6 +137,7 @@ export class FlightsService {
     return {
       id: airline.id as string,
       name: airline.name,
+      code: airline.code,
       logoUrl: airline.logoUrl,
       contactEmail: airline.contactEmail,
       baggagePolicy: airline.baggagePolicy,
@@ -173,7 +214,8 @@ export class FlightsService {
       throw new BadRequestException('Arrival time must be after departure time in UTC.');
     }
 
-    const departureDateOnly = moment(departureUtc).format('YYYY-MM-DD');
+    // FLT-11: the searchable date is the local date at the departure airport.
+    const departureDateOnly = moment.tz(departureUtc, depAirport.timeZone).format('YYYY-MM-DD');
 
     const duplicate = await this.flightModel.findOne({
       airlineId,
@@ -223,9 +265,17 @@ export class FlightsService {
       returnDate,
       cabinClass,
       passengers = 1,
+      minPrice,
       maxPrice,
       sortBy,
     } = queryDto;
+    if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
+      throw new BadRequestException('minPrice cannot be greater than maxPrice');
+    }
+    // FLT-15: inclusive price range on the selected cabin, applied to outbound and return legs.
+    const priceRange: Record<string, number> = {};
+    if (minPrice !== undefined) priceRange.$gte = Number(minPrice);
+    if (maxPrice !== undefined) priceRange.$lte = Number(maxPrice);
 
     const now = new Date();
     const query: FilterQuery<Flight> = {
@@ -244,13 +294,9 @@ export class FlightsService {
     query.airlineId = { $in: activeAirlines };
 
     if (date) query.departureDate = date;
-    if (maxPrice) query[`cabins.${cabinClass}.price`] = { $lte: Number(maxPrice) };
+    if (Object.keys(priceRange).length) query[`cabins.${cabinClass}.price`] = priceRange;
 
-    let dbQuery = this.flightModel.find(query);
-    if (sortBy === 'price') dbQuery = dbQuery.sort({ [`cabins.${cabinClass}.price`]: 1 });
-    if (sortBy === 'duration') dbQuery = dbQuery.sort({ departureTimeUtc: 1 });
-
-    const outbound = await dbQuery.exec();
+    const outbound = this.sortFlights(await this.flightModel.find(query).exec(), cabinClass, sortBy);
 
     let returnFlights: typeof outbound = [];
     if (returnDate) {
@@ -262,11 +308,37 @@ export class FlightsService {
         status: 'SCHEDULED',
         departureTimeUtc: { $gt: now },
         airlineId: { $in: activeAirlines },
+        ...(Object.keys(priceRange).length ? { [`cabins.${cabinClass}.price`]: priceRange } : {}),
       };
-      returnFlights = await this.flightModel.find(returnQuery).exec();
+      returnFlights = this.sortFlights(await this.flightModel.find(returnQuery).exec(), cabinClass, sortBy);
     }
 
     return { outbound, return: returnDate ? returnFlights : undefined };
+  }
+
+  /** ITN-26: IATA codes of the reference airports serving a city. */
+  async airportCodesInCity(cityCode: string) {
+    const airports = await this.airportModel.find({ city: cityCode }).select('iataCode').lean();
+    return airports.map((a) => a.iataCode);
+  }
+
+  /** FLT-15: sort by cabin price, by duration (arrival - departure) or by departure time. */
+  private sortFlights<T extends Flight>(rows: T[], cabinClass: string, sortBy?: string): T[] {
+    const price = (f: T) => f.cabins?.[cabinClass]?.price ?? Number.POSITIVE_INFINITY;
+    const duration = (f: T) => f.arrivalTimeUtc.getTime() - f.departureTimeUtc.getTime();
+    const departure = (f: T) => f.departureTimeUtc.getTime();
+    const key = sortBy === 'price' ? price : sortBy === 'duration' ? duration : departure;
+    return [...rows].sort((a, b) => key(a) - key(b) || departure(a) - departure(b));
+  }
+
+  /** FLT-30: a Scheduled flight becomes Departed once its departure time has passed. */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async markDepartedFlights(now = new Date()) {
+    const result = await this.flightModel.updateMany(
+      { status: 'SCHEDULED', departureTimeUtc: { $lte: now } },
+      { $set: { status: 'DEPARTED' } },
+    );
+    return result.modifiedCount;
   }
 
   // FLT-15, FLT-17: Flight Detail & Moderator Passenger Views
@@ -298,19 +370,89 @@ export class FlightsService {
       throw new ForbiddenException('You can only modify flights belonging to your airline.');
     }
 
+    const now = new Date();
+    if (flight.status === 'SCHEDULED' && flight.departureTimeUtc <= now) {
+      flight.status = 'DEPARTED';
+      await flight.save();
+    }
     if (flight.status !== 'SCHEDULED') {
       throw new ConflictException('Only Scheduled flights can be edited.');
     }
 
-    if ((updateDto.departureAirport || updateDto.arrivalAirport) && flight.hasConfirmedBookings) {
+    const {
+      cabins,
+      departureTimeLocal,
+      arrivalTimeLocal,
+      departureTimeUtc,
+      arrivalTimeUtc,
+      departureAirport,
+      arrivalAirport,
+      ...rest
+    } = updateDto;
+
+    const airportsChanged =
+      (departureAirport !== undefined && departureAirport !== flight.departureAirport) ||
+      (arrivalAirport !== undefined && arrivalAirport !== flight.arrivalAirport);
+    if (airportsChanged && flight.hasConfirmedBookings) {
       throw new BadRequestException(
         'Airports cannot change after the flight has confirmed bookings.',
       );
     }
 
+    // FLT-02, FLT-03: the same airport and time rules as on creation.
+    const depCode = departureAirport ?? flight.departureAirport;
+    const arrCode = arrivalAirport ?? flight.arrivalAirport;
+    if (depCode === arrCode) {
+      throw new BadRequestException('Departure and arrival airports must be different.');
+    }
+    const [depAirport, arrAirport] = await Promise.all([
+      this.airportModel.findOne({ iataCode: depCode }).lean(),
+      this.airportModel.findOne({ iataCode: arrCode }).lean(),
+    ]);
+    if (!depAirport || !arrAirport) {
+      throw new BadRequestException('Invalid departure or arrival airport IATA code.');
+    }
+    const newDeparture = departureTimeLocal
+      ? moment.tz(departureTimeLocal, depAirport.timeZone).utc().toDate()
+      : departureTimeUtc
+        ? new Date(departureTimeUtc)
+        : flight.departureTimeUtc;
+    const newArrival = arrivalTimeLocal
+      ? moment.tz(arrivalTimeLocal, arrAirport.timeZone).utc().toDate()
+      : arrivalTimeUtc
+        ? new Date(arrivalTimeUtc)
+        : flight.arrivalTimeUtc;
+    const timesChanged =
+      newDeparture.getTime() !== flight.departureTimeUtc.getTime() ||
+      newArrival.getTime() !== flight.arrivalTimeUtc.getTime();
+    if (timesChanged && newDeparture <= now) {
+      throw new BadRequestException('Departure time cannot be in the past.');
+    }
+    if (newArrival <= newDeparture) {
+      throw new BadRequestException('Arrival time must be after departure time in UTC.');
+    }
+    const departureDate = moment.tz(newDeparture, depAirport.timeZone).format('YYYY-MM-DD');
+    if (departureDate !== flight.departureDate) {
+      const duplicate = await this.flightModel.exists({
+        _id: { $ne: flight._id },
+        airlineId: flight.airlineId,
+        flightNumber: flight.flightNumber,
+        departureDate,
+      });
+      if (duplicate) {
+        throw new BadRequestException(
+          'An airline cannot have duplicate flight numbers on the same departure date.',
+        );
+      }
+    }
+    flight.departureAirport = depAirport.iataCode;
+    flight.arrivalAirport = arrAirport.iataCode;
+    flight.departureTimeUtc = newDeparture;
+    flight.arrivalTimeUtc = newArrival;
+    flight.departureDate = departureDate;
+
     // FLT-05: a cabin update keeps the cabin's other fields (e.g. FLT-04 baggage allowance) and the
     // cabins that were not sent, instead of replacing the whole cabin map.
-    const { cabins, ...rest } = updateDto;
     Object.assign(flight, rest);
     if (cabins) {
       const merged = { ...(flight.cabins ?? {}) };

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
+import { Delete, Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Public, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
@@ -73,6 +73,17 @@ export class RoomsController {
     @Body() dto: SetRoomStatusDto,
   ) {
     return this.rooms.setStatus(hotelId, roomId, dto, actor);
+  }
+
+  @Delete(':roomId')
+  @Roles(UserRole.HOTEL_MODERATOR)
+  @ApiOperation({ summary: 'HTL-06: Delete a room (rejected while it has pending or confirmed reservations)' })
+  remove(
+    @CurrentUser() actor: Principal,
+    @Param('hotelId', ObjectIdPipe) hotelId: string,
+    @Param('roomId', ObjectIdPipe) roomId: string,
+  ) {
+    return this.rooms.remove(hotelId, roomId, actor);
   }
 
   @Put(':roomId/availability')

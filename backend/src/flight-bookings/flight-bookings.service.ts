@@ -422,6 +422,47 @@ export class FlightBookingsService {
     return lines.join('\r\n') + '\r\n';
   }
 
+  // ---------- FLT-05 / GEN-01: a schedule change reaches every affected booking ----------
+  /** Updates booked leg times to the flight's current schedule and notifies each traveler once. */
+  async applyScheduleChange(flightId: string) {
+    const flight = await this.flights.findById(toOid(flightId)).lean();
+    if (!flight) return { updatedBookings: 0 };
+    const affected = await this.bookings.find({
+      'legs.flightId': flight._id,
+      status: { $in: ['CONFIRMED', 'PENDING'] },
+    });
+    let updatedBookings = 0;
+    for (const booking of affected) {
+      let changed = false;
+      for (const leg of booking.legs) {
+        if (String(leg.flightId) !== String(flight._id)) continue;
+        if (
+          leg.departureTime.getTime() !== flight.departureTimeUtc.getTime() ||
+          leg.arrivalTime.getTime() !== flight.arrivalTimeUtc.getTime()
+        ) {
+          leg.departureTime = flight.departureTimeUtc;
+          leg.arrivalTime = flight.arrivalTimeUtc;
+          changed = true;
+        }
+      }
+      if (!changed) continue;
+      const departures = booking.legs.map((l) => l.departureTime.getTime());
+      booking.firstDeparture = new Date(Math.min(...departures));
+      booking.lastDeparture = new Date(Math.max(...departures));
+      booking.markModified('legs');
+      await booking.save();
+      await this.notifications.create({
+        userId: booking.userId,
+        title: 'Flight schedule changed',
+        message: `Flight ${flight.flightNumber} (booking ${booking.reference}) now departs ${flight.departureTimeUtc.toISOString()} (UTC).`,
+        type: NotificationType.FLIGHT_SCHEDULE_CHANGED,
+        metadata: { bookingId: String(booking._id), bookingType: BookingType.FLIGHT, reference: booking.reference, flightId: String(flight._id) },
+      });
+      updatedBookings += 1;
+    }
+    return { updatedBookings };
+  }
+
   // ---------- FLT-06: airline cancels a Scheduled flight ----------
   async cancelFlightByProvider(flightId: string, airlineIds: string[]) {
     const flight = await this.ownedFlight(flightId, airlineIds);

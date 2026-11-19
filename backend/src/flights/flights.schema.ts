@@ -10,6 +10,10 @@ export class AirlineProfile extends Document {
   @Prop({ type: String, required: true })
   name!: string;
 
+  /** FLT-01: two-character airline code, unique when set. */
+  @Prop({ type: String })
+  code?: string;
+
   @Prop({ type: String })
   logoUrl?: string;
 
@@ -87,6 +91,10 @@ export class Flight extends Document {
 }
 
 export const AirlineProfileSchema = SchemaFactory.createForClass(AirlineProfile);
+AirlineProfileSchema.index(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: 'string' } }, name: 'code_unique_when_set' },
+);
 // One airline per moderator, enforced only once a moderator is linked. A new index name avoids a
 // startup conflict with the legacy non-partial `moderatorId_1` index; drop that one with
 // `npm run migrate:airline-moderator-index -- --apply`.

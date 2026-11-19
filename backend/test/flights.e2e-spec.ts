@@ -17,6 +17,7 @@ import { FlightBooking } from '../src/flight-bookings/flight-booking.schema';
 import { Notification } from '../src/notifications/notifications.schema';
 import { RefundBookingSource } from '../src/payments/refund-booking-source';
 import { BookingType } from '../src/payments/payments.constants';
+import { FlightsService } from '../src/flights/flights.service';
 
 /** Flight management and search (FLT-01, FLT-03..05, FLT-11) request validation. */
 describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () => {
@@ -499,6 +500,201 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
         maxExtraBagsPerPassenger: 2,
         legs: [{ cabinClass: 'economy', freeBags: 1, maxBagWeightKg: 23 }],
       });
+    });
+  });
+
+  describe('Audit gaps: FLT-05 edit rules, FLT-30 Departed, GEN-01 schedule change, FLT-15 filters, FLT-01 code and logo, ITN-26', () => {
+    const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(64, 1)]);
+    const del = (path: string, cookies: string[] = []) =>
+      csrf(request(server()).delete(`/api${path}`)).set('Cookie', cookies);
+    const loginAs = async (role: UserRole, extra: Record<string, unknown> = {}) => {
+      const user = await users.create({
+        name: `U ${new Types.ObjectId().toString().slice(-4)}`,
+        email: `${new Types.ObjectId().toString()}@example.com`,
+        passwordHash,
+        role,
+        ...extra,
+      });
+      const res = await post('/auth/login').send({ email: user.email, password }).expect(200);
+      return { user, cookies: (res.headers['set-cookie'] as unknown as string[]).map((v) => v.split(';')[0]) };
+    };
+
+    it('FLT-05: edits follow the creation rules and use local airport times', async () => {
+      const mod = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const id = created.body._id as string;
+      const dep = new Date(created.body.departureTimeUtc).getTime();
+
+      await patch(`/flights/${id}`, mod.cookies)
+        .send({ arrivalTimeUtc: new Date(dep - 3600000).toISOString() })
+        .expect(400);
+      await patch(`/flights/${id}`, mod.cookies)
+        .send({ departureTimeLocal: inDays(-1, '10:00'), arrivalTimeLocal: inDays(-1, '18:00') })
+        .expect(400);
+      await patch(`/flights/${id}`, mod.cookies).send({ departureAirport: 'ZZZ' }).expect(400);
+      await patch(`/flights/${id}`, mod.cookies).send({ arrivalAirport: 'CAI' }).expect(400);
+
+      // Moved 5 days later in local time (Cairo is UTC+2 in winter, New York UTC-5).
+      const newDate = inDays(25, '11:00');
+      const moved = await patch(`/flights/${id}`, mod.cookies)
+        .send({ departureTimeLocal: newDate, arrivalTimeLocal: inDays(25, '16:30') })
+        .expect(200);
+      expect(moved.body.departureDate).toBe(newDate.slice(0, 10));
+      const found = await get(`/flights/search?origin=CAI&destination=JFK&date=${newDate.slice(0, 10)}`).expect(200);
+      expect(found.body.outbound).toHaveLength(1);
+      expect(
+        (await get(`/flights/search?origin=CAI&destination=JFK&date=${validFlight().departureTimeLocal.slice(0, 10)}`)).body
+          .outbound,
+      ).toHaveLength(0);
+    });
+
+    it('FLT-30: a flight past its departure time becomes Departed and can no longer be edited', async () => {
+      const mod = await moderator();
+      const a = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const b = await post('/flights', mod.cookies).send({ ...validFlight(), flightNumber: 'MS778' }).expect(201);
+      const past = new Date(Date.now() - 3600000);
+      await flights.updateMany({ _id: { $in: [a.body._id, b.body._id] } }, { $set: { departureTimeUtc: past } });
+
+      await patch(`/flights/${a.body._id as string}`, mod.cookies).send({ extraBaggagePricePerKg: 3 }).expect(409);
+      expect((await flights.findById(a.body._id).lean())!.status).toBe('DEPARTED');
+      expect(await app.get(FlightsService).markDepartedFlights()).toBe(1);
+      expect((await flights.findById(b.body._id).lean())!.status).toBe('DEPARTED');
+    });
+
+    it('GEN-01: a schedule change updates booked legs and notifies each traveler once', async () => {
+      const mod = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const traveler = await users.create({
+        name: 'Traveler',
+        email: `${new Types.ObjectId().toString()}@example.com`,
+        passwordHash,
+        role: UserRole.USER,
+      });
+      const departure = new Date(created.body.departureTimeUtc);
+      const arrival = new Date(created.body.arrivalTimeUtc);
+      const bookings = app.get<Model<FlightBooking>>(getModelToken(FlightBooking.name));
+      const booking = await bookings.create({
+        userId: traveler._id,
+        reference: 'TSCHED01',
+        status: 'CONFIRMED',
+        legs: [{
+          flightId: new Types.ObjectId(created.body._id as string), flightNumber: 'MS777', cabinClass: 'economy',
+          departureAirport: 'CAI', arrivalAirport: 'JFK', departureTime: departure, arrivalTime: arrival,
+          farePerSeat: 320, baggageCost: 0, legTotal: 320,
+        }],
+        passengers: [{ firstName: 'A', lastName: 'B', dateOfBirth: new Date('1990-01-01'), passportNumber: 'P1', type: 'adult' }],
+        seatCount: 1, currency: 'USD', totalPrice: 320, firstDeparture: departure, lastDeparture: departure,
+      });
+
+      await patch(`/flights/${created.body._id as string}`, mod.cookies)
+        .send({ departureTimeLocal: inDays(20, '12:30'), arrivalTimeLocal: inDays(20, '20:45') })
+        .expect(200);
+      const updated = (await bookings.findById(booking._id).lean())!;
+      expect(updated.legs[0].departureTime.getTime()).toBe(departure.getTime() + 2 * 3600000);
+      expect(updated.firstDeparture.getTime()).toBe(departure.getTime() + 2 * 3600000);
+      const notes = app.get<Model<Notification>>(getModelToken(Notification.name));
+      expect(await notes.countDocuments({ userId: traveler._id, type: 'FLIGHT_SCHEDULE_CHANGED' })).toBe(1);
+
+      // A price-only edit is not a schedule change.
+      await patch(`/flights/${created.body._id as string}`, mod.cookies)
+        .send({ cabins: { economy: { seatCount: 2, price: 300 } } })
+        .expect(200);
+      expect(await notes.countDocuments({ userId: traveler._id, type: 'FLIGHT_SCHEDULE_CHANGED' })).toBe(1);
+    });
+
+    it('FLT-15: inclusive min/max price, min > max error and sorting by duration', async () => {
+      const mod = await moderator();
+      const date = validFlight().departureTimeLocal.slice(0, 10);
+      // Cheap but long (10:30 -> 18:45 NY), pricey but short (12:00 -> 17:00 NY).
+      await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      await post('/flights', mod.cookies)
+        .send({
+          ...validFlight(),
+          flightNumber: 'MS900',
+          departureTimeLocal: inDays(20, '12:00'),
+          arrivalTimeLocal: inDays(20, '17:00'),
+          cabins: { economy: { seatCount: 5, price: 500, freeBags: 1, maxBagWeightKg: 23 } },
+        })
+        .expect(201);
+      const search = (q: string) => get(`/flights/search?origin=CAI&destination=JFK&date=${date}&${q}`);
+
+      expect((await search('minPrice=320&maxPrice=320').expect(200)).body.outbound).toHaveLength(1);
+      expect((await search('minPrice=321').expect(200)).body.outbound.map((f: { flightNumber: string }) => f.flightNumber)).toEqual(['MS900']);
+      await search('minPrice=600&maxPrice=100').expect(400);
+      const byDuration = (await search('sortBy=duration').expect(200)).body.outbound;
+      expect(byDuration.map((f: { flightNumber: string }) => f.flightNumber)).toEqual(['MS900', 'MS777']);
+      const byPrice = (await search('sortBy=price').expect(200)).body.outbound;
+      expect(byPrice.map((f: { flightNumber: string }) => f.flightNumber)).toEqual(['MS777', 'MS900']);
+    });
+
+    it('FLT-01, GEN-08: airlines have a unique code and one uploaded JPG/PNG logo', async () => {
+      const admin = await loginAs(UserRole.ADMIN);
+      const airline = await post('/airlines', admin.cookies).send({ name: 'Nile Air', code: 'NA' }).expect(201);
+      expect(airline.body.code).toBe('NA');
+      await post('/airlines', admin.cookies).send({ name: 'Copy Air', code: 'NA' }).expect(409);
+      await post('/airlines', admin.cookies).send({ name: 'Bad Code', code: 'nile' }).expect(400);
+
+      const airlineId = airline.body.id as string;
+      const mod = await loginAs(UserRole.AIRLINE_MODERATOR, { providerId: new Types.ObjectId(airlineId), providerType: 'AIRLINE' });
+      const other = await moderator();
+      const upload = (cookies: string[], data: Buffer, name: string, type: string) =>
+        post(`/airlines/${airlineId}/logo`, cookies).attach('logo', data, { filename: name, contentType: type });
+
+      await upload(mod.cookies, Buffer.from('not an image'), 'logo.png', 'image/png').expect(400);
+      await upload(other.cookies, PNG, 'logo.png', 'image/png').expect(403);
+      const first = await upload(mod.cookies, PNG, 'logo.png', 'image/png').expect(201);
+      expect(first.body.logoUrl).toMatch(/^\/api\/airlines\/media\/[\da-f-]{36}\.png$/);
+      const served = await get(first.body.logoUrl.replace('/api', '')).expect(200);
+      expect(served.headers['content-type']).toMatch(/image\/png/);
+
+      // A new logo replaces the old one, which stops being served.
+      const second = await upload(mod.cookies, PNG, 'logo2.png', 'image/png').expect(201);
+      expect(second.body.logoUrl).not.toBe(first.body.logoUrl);
+      await get(first.body.logoUrl.replace('/api', '')).expect(404);
+      await get('/airlines/media/..%2F..%2Fpackage.json').expect(404);
+      void del;
+    });
+
+    it('ITN-26: one-way and round-trip flights from a chosen airport to the first day\'s city', async () => {
+      await app.get<Model<Airport>>(getModelToken(Airport.name)).create({
+        iataCode: 'EWR', name: 'Newark', city: 'nyc', country: 'US', timeZone: 'America/New_York',
+      });
+      const mod = await moderator();
+      const startDate = validFlight().departureTimeLocal.slice(0, 10);
+      await post('/flights', mod.cookies)
+        .send({ ...validFlight(), arrivalAirportCode: 'EWR' })
+        .expect(201);
+      await post('/flights', mod.cookies)
+        .send({
+          ...validFlight(),
+          flightNumber: 'MS778',
+          departureAirportCode: 'EWR',
+          arrivalAirportCode: 'CAI',
+          departureTimeLocal: inDays(23, '20:00'),
+          arrivalTimeLocal: inDays(24, '14:00'),
+        })
+        .expect(201);
+      const traveler = await loginAs(UserRole.USER);
+      const itn = await post('/itineraries', traveler.cookies)
+        .send({ title: 'New York trip', countries: ['US'], startDate })
+        .expect(201);
+      const itnId = (itn.body._id ?? itn.body.id) as string;
+      for (let i = 0; i < 3; i += 1) {
+        await post(`/itineraries/${itnId}/days`, traveler.cookies).send({ cityCode: 'nyc', cityName: 'New York' }).expect(201);
+      }
+
+      const suggestions = await get(`/itineraries/${itnId}/flights`).set('Cookie', traveler.cookies).expect(200);
+      expect(suggestions.body.searches.length).toBeGreaterThan(0);
+      expect(suggestions.body.outbound).toBeUndefined();
+
+      const oneWay = await get(`/itineraries/${itnId}/flights?origin=CAI`).set('Cookie', traveler.cookies).expect(200);
+      expect(oneWay.body.flightSearch).toMatchObject({ destinations: ['EWR'], date: startDate, roundTrip: false });
+      expect(oneWay.body.outbound.map((f: { flightNumber: string }) => f.flightNumber)).toEqual(['MS777']);
+
+      const round = await get(`/itineraries/${itnId}/flights?origin=CAI&roundTrip=true`).set('Cookie', traveler.cookies).expect(200);
+      expect(round.body.flightSearch.returnDate).toBe(inDays(23, '00:00').slice(0, 10));
+      expect(round.body.return.map((f: { flightNumber: string }) => f.flightNumber)).toEqual(['MS778']);
+      await get(`/itineraries/${itnId}/flights?origin=cai`).set('Cookie', traveler.cookies).expect(400);
     });
   });
 });

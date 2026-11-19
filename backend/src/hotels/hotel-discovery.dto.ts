@@ -40,7 +40,11 @@ export class HotelSearchQuery extends StayDatesQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10)
   rooms = 1;
 
-  @ApiPropertyOptional({ example: 150, minimum: 0.01, description: 'Cheapest qualifying room per night' })
+  @ApiPropertyOptional({ example: 50, minimum: 0, description: 'HTL-12: inclusive minimum, cheapest qualifying room per night' })
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
+  minPrice?: number;
+
+  @ApiPropertyOptional({ example: 150, minimum: 0.01, description: 'HTL-12: inclusive maximum, cheapest qualifying room per night' })
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0.01)
   maxPrice?: number;
 
