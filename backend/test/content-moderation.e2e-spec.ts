@@ -270,6 +270,15 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     await get(`/itineraries/${hiddenTrip.id as string}`, owner.cookies).expect(200);
   });
 
+  it('ITN-14: a malformed itinerary id in the budget summary is a 400, not a server error', async () => {
+    const owner = await account();
+    const res = await request(server())
+      .get('/api/itineraries/not-an-id/budget-summary')
+      .set('Cookie', owner.cookies)
+      .expect(400);
+    expect(res.body.statusCode).toBe(400);
+  });
+
   it('rejects unknown content types, invalid ids and missing content', async () => {
     const admin = await account(UserRole.ADMIN);
     const user = await account();

@@ -32,6 +32,7 @@ import {
   UpdateItineraryDto,
 } from './itineraries.dto';
 import { ItinerariesService } from './itineraries.service';
+import { ObjectIdPipe } from '../common/http';
 
 @ApiTags('Itineraries')
 @ApiCookieAuth()
@@ -252,7 +253,7 @@ export class ItinerariesController {
   })
   getBudgetSummary(
     @CurrentUser() actor: Principal,
-    @Param('id') id: string,
+    @Param('id', ObjectIdPipe) id: string,
     @Query() query: BudgetSummaryQueryDto,
   ) {
     return this.itinerariesService.getBudgetSummary(actor, id, query.currency);
