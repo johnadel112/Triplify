@@ -36,6 +36,21 @@ export function configureApp(app: INestApplication) {
         .addCookieAuth('access_token')
         .build(),
     );
-    SwaggerModule.setup('api/docs', app, addResponseContracts(document));
+    SwaggerModule.setup('api/docs', app, addResponseContracts(document), {
+      swaggerOptions: {
+        // "Try it out" must pass the CSRF guard like the frontend does: send the custom header
+        // and the HttpOnly session cookie. The Swagger page's own origin (for example
+        // http://localhost:3000) must also be listed in FRONTEND_URL.
+        requestInterceptor: (request: {
+          headers: Record<string, string>;
+          credentials?: string;
+        }) => {
+          request.headers['X-Triplify-CSRF'] = '1';
+          request.credentials = 'same-origin';
+          return request;
+        },
+        persistAuthorization: true,
+      },
+    });
   }
 }

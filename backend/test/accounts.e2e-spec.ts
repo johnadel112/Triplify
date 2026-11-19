@@ -10,7 +10,13 @@ import { hash } from 'bcryptjs';
 import { AccountStatus, CLOCK, UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
 import { Session } from '../src/auth/session.schema';
-import { Airport, City, Country, Currency } from '../src/reference-data/reference.schema';
+import {
+  Airport,
+  Attraction,
+  City,
+  Country,
+  Currency,
+} from '../src/reference-data/reference.schema';
 import { seedAdmin, seedReference } from '../src/database/seeding';
 import { AuditLog, NotificationOutbox } from '../src/audit/audit.schema';
 import { AuditService } from '../src/audit/audit.service';
@@ -486,17 +492,22 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([method, operation]) => ({ path, method, operation })),
     );
-    expect(operations).toHaveLength(125);
+    expect(operations).toHaveLength(128);
     expect(document.paths).toEqual(
       expect.objectContaining({
         '/api/payments/webhook': expect.objectContaining({ post: expect.any(Object) }),
         '/api/flight-bookings/{id}/cancel': expect.objectContaining({ post: expect.any(Object) }),
         '/api/bookings/{type}/{id}/policies': expect.objectContaining({ get: expect.any(Object) }),
-        '/api/admin/providers/airlines/{id}/verify': expect.objectContaining({ patch: expect.any(Object) }),
+        '/api/admin/providers/airlines/{id}/verify': expect.objectContaining({
+          patch: expect.any(Object),
+        }),
         '/api/blog/posts/{postId}/comments': expect.objectContaining({ get: expect.any(Object) }),
         '/api/hotels/{hotelId}/rooms/{roomId}/availability': expect.objectContaining({
           put: expect.objectContaining({
-            responses: expect.objectContaining({ '200': expect.any(Object), '400': expect.any(Object) }),
+            responses: expect.objectContaining({
+              '200': expect.any(Object),
+              '400': expect.any(Object),
+            }),
             parameters: expect.arrayContaining([
               expect.objectContaining({ in: 'header', name: 'X-Triplify-CSRF' }),
             ]),
@@ -531,13 +542,44 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
       cities: app.get<Model<City>>(getModelToken(City.name)),
       airports: app.get<Model<Airport>>(getModelToken(Airport.name)),
       currencies: app.get<Model<Currency>>(getModelToken(Currency.name)),
+      attractions: app.get<Model<Attraction>>(getModelToken(Attraction.name)),
     };
     await seedReference(models);
     await seedReference(models);
     expect(await models.airports.countDocuments()).toBe(8);
     expect(await models.cities.countDocuments()).toBe(8);
     expect(await models.countries.countDocuments()).toBe(8);
-    expect(await models.currencies.countDocuments()).toBe(2);
+    // Official course datasets: supported currencies are the codes in Countries.csv.
+    expect(await models.currencies.countDocuments()).toBe(7);
+    expect((await models.currencies.find().lean()).map((c) => c.code).sort()).toEqual([
+      'AED',
+      'EGP',
+      'EUR',
+      'GBP',
+      'JPY',
+      'SAR',
+      'USD',
+    ]);
+    expect(await models.currencies.findOne({ code: 'JPY' }).lean()).toMatchObject({
+      minorUnits: 0,
+    });
+    expect(await models.countries.findOne({ code: 'DE' }).lean()).toMatchObject({
+      currency: 'EUR',
+    });
+    expect(await models.attractions.countDocuments()).toBe(8);
+    expect(await models.attractions.findOne({ code: 'att-8' }).lean()).toMatchObject({
+      name: 'Römerberg',
+      city: 'frankfurt',
+    });
+    const cityCodes = new Set((await models.cities.find().lean()).map((c) => c.code));
+    for (const attraction of await models.attractions.find().lean())
+      expect(cityCodes.has(attraction.city)).toBe(true);
+    const byCity = await get('/reference/attractions?city=cairo').expect(200);
+    expect(byCity.body).toMatchObject({
+      total: 1,
+      items: [{ code: 'att-1', name: 'Giza Pyramids and Sphinx', city: 'cairo' }],
+    });
+    await get('/reference/attractions?city=Cairo!').expect(400);
     const airport = await models.airports.findOne({ iataCode: 'CAI' });
     expect(airport!.city).toBe('cairo');
     expect(await models.airports.findOne({ iataCode: 'FRA' }).lean()).toMatchObject({

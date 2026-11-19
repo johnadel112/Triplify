@@ -807,6 +807,8 @@ export class ItinerariesService {
       transportCosts: transportCostsSummary,
       days: daysSummary,
       overallTotal: Math.round(overallTotal * 100) / 100,
+      // ITN-18: which FXRatesAPI rates were applied (null when no conversion was needed).
+      exchangeRates: this.fxRatesService.describe(),
     };
   }
 

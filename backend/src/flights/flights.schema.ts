@@ -3,8 +3,9 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class AirlineProfile extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
-  moderatorId!: Types.ObjectId;
+  /** Set when the assigned moderator first manages the profile; an admin creates airlines first (FLT-01). */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  moderatorId?: Types.ObjectId;
 
   @Prop({ type: String, required: true })
   name!: string;
@@ -73,4 +74,15 @@ export class Flight extends Document {
 }
 
 export const AirlineProfileSchema = SchemaFactory.createForClass(AirlineProfile);
+// One airline per moderator, enforced only once a moderator is linked. A new index name avoids a
+// startup conflict with the legacy non-partial `moderatorId_1` index; drop that one with
+// `npm run migrate:airline-moderator-index -- --apply`.
+AirlineProfileSchema.index(
+  { moderatorId: 1 },
+  {
+    unique: true,
+    name: 'moderatorId_unique_when_linked',
+    partialFilterExpression: { moderatorId: { $type: 'objectId' } },
+  },
+);
 export const FlightSchema = SchemaFactory.createForClass(Flight);

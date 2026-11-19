@@ -405,13 +405,30 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     });
 
     it('handles FX conversion across multiple currencies', async () => {
-      // 100 EUR -> USD (100 / 0.92 ~ 108.7)
-      const converted = await fxRatesService.convert(100, 'EUR', 'USD');
-      expect(converted).toBeGreaterThan(100);
+      // Simulated FXRatesAPI response, so the test never depends on the network.
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            base: 'USD',
+            date: '2026-11-19T00:00:00.000Z',
+            rates: { USD: 1, EUR: 0.92 },
+          }),
+      } as unknown as Response);
+      try {
+        // 100 EUR -> USD (100 / 0.92 ~ 108.7)
+        const converted = await fxRatesService.convert(100, 'EUR', 'USD');
+        expect(converted).toBe(108.7);
 
-      // Same currency returns exact amount
-      const same = await fxRatesService.convert(100, 'USD', 'USD');
-      expect(same).toBe(100);
+        // Same currency returns exact amount
+        const same = await fxRatesService.convert(100, 'USD', 'USD');
+        expect(same).toBe(100);
+        expect(fxRatesService.describe()).toMatchObject({ provider: 'FXRatesAPI', stale: false });
+      } finally {
+        fetchMock.mockRestore();
+      }
     });
 
     it('rejects invalid currency code in FX conversion', async () => {

@@ -73,8 +73,10 @@ Consecutive days associated with the same predefined city are dynamically collap
 
 ### FXRatesAPI Integration & Budget Conversion (ITN-18)
 The backend integrates with `https://api.fxratesapi.com/latest`:
-- **Caching**: Live rates against `USD` are cached in memory for 1 hour to prevent API rate exhaustion.
-- **Graceful Fallback**: If FXRatesAPI is unreachable or offline, the service falls back to a curated exchange-rate matrix covering major global currencies (`USD`, `EUR`, `GBP`, `EGP`, `AED`, `SAR`, etc.).
+- **Daily refresh (ITN-18)**: rates against `USD` are fetched once per day and cached in memory. `FXRATES_API_KEY` is optional (the free endpoint works without one) and is only ever sent from the backend.
+- **Provider unavailable**: if a refresh fails (network error, timeout, error status or malformed response), the last successfully fetched real rates are used and the budget summary marks them `stale: true`; the provider is retried after 5 minutes, not on every request. If no rates were ever fetched, conversion returns `503 EXCHANGE_RATES_UNAVAILABLE`. No hardcoded or invented rates are used.
+- **Invalid currencies**: malformed codes and codes FXRatesAPI does not publish return `400`.
+- **Transparency**: `GET /api/itineraries/:id/budget-summary` includes `exchangeRates` (`provider`, `base`, rate `date`, `fetchedAt`, `stale`), or `null` when no conversion was needed.
 - **Conversion Formula**:
 $$\text{amount}_{\text{target}} = \frac{\text{amount}_{\text{source}}}{\text{rate}_{\text{source/USD}}} \times \text{rate}_{\text{target/USD}}$$
 - **User Preference**: Budget summary automatically retrieves the user's `preferredCurrency` (John's module) if none is explicitly specified in the query parameter.

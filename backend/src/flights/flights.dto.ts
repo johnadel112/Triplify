@@ -91,6 +91,25 @@ export class AirlineProfileDto {
   contactEmail?: string;
 }
 
+/** FLT-01: an administrator creates an airline profile. */
+export class CreateAirlineDto {
+  @ApiProperty({ maxLength: 100, example: 'Nile Air' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  logoUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  contactEmail?: string;
+}
+
 /** FLT-03/FLT-04: create a flight; times are in each airport's local time. */
 export class CreateFlightDto {
   @ApiProperty({ example: 'MS777' })

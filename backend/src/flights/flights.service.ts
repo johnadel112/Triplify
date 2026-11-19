@@ -10,11 +10,19 @@ import { FilterQuery, Model, Types, ClientSession } from 'mongoose';
 import { Flight, AirlineProfile } from './flights.schema';
 import { Airport } from '../reference-data/reference.schema';
 import { NOTIFICATION_DELIVERY, NotificationDeliveryPort } from '../integrations/contracts';
-import { AirlineProfileDto, CreateFlightDto, SearchFlightsQuery, UpdateFlightDto } from './flights.dto';
+import {
+  AirlineProfileDto,
+  CreateAirlineDto,
+  CreateFlightDto,
+  SearchFlightsQuery,
+  UpdateFlightDto,
+} from './flights.dto';
 
 /** Optional DTO fields exist as undefined; drop them so updates never erase stored values. */
 function definedOnly<T extends object>(dto: T): Partial<T> {
-  return Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)) as Partial<T>;
+  return Object.fromEntries(
+    Object.entries(dto).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 import moment from 'moment-timezone';
 
@@ -28,13 +36,50 @@ export class FlightsService {
   ) {}
 
   // FLT-01, GEN-06: Moderator-specific airline profile editing & notifications
-  async updateAirlineProfile(userId: string, providerId: string, dto: AirlineProfileDto, session?: ClientSession) {
+  /** FLT-01: admin creates an airline; its moderator is then created with this id as providerId. */
+  async createAirline(dto: CreateAirlineDto) {
+    const airline = await this.airlineModel.create({
+      name: dto.name,
+      logoUrl: dto.logoUrl,
+      contactEmail: dto.contactEmail,
+    });
+    return this.publicAirline(airline);
+  }
+
+  async getAirline(id: string) {
+    const airline = await this.airlineModel.findOne({ _id: new Types.ObjectId(id), active: true });
+    if (!airline) throw new NotFoundException('Airline not found');
+    return this.publicAirline(airline);
+  }
+
+  private publicAirline(airline: AirlineProfile) {
+    return {
+      id: airline.id as string,
+      name: airline.name,
+      logoUrl: airline.logoUrl,
+      contactEmail: airline.contactEmail,
+      verified: airline.verified,
+      active: airline.active,
+    };
+  }
+
+  async updateAirlineProfile(
+    userId: string,
+    providerId: string,
+    dto: AirlineProfileDto,
+    session?: ClientSession,
+  ) {
     const updateData = definedOnly(dto);
     const profile = await this.airlineModel
-      .findOne({ _id: new Types.ObjectId(providerId), moderatorId: new Types.ObjectId(userId) })
+      .findOne({
+        _id: new Types.ObjectId(providerId),
+        // The moderator is assigned by the admin through providerId; the first edit links them.
+        $or: [{ moderatorId: new Types.ObjectId(userId) }, { moderatorId: { $exists: false } }],
+      })
       .session(session || null);
     if (!profile) throw new ForbiddenException('Assigned airline profile not found');
     Object.assign(profile, updateData);
+    profile.moderatorId = new Types.ObjectId(userId);
     const saved = await profile.save({ session });
 
     await this.notificationDelivery.deliver({
@@ -51,7 +96,11 @@ export class FlightsService {
 
   // FLT-03, FLT-04, FLT-05, FLT-06: Flight Creation & Inventory Validation
   async createFlight(airlineId: string, dto: CreateFlightDto) {
-    const airline = await this.airlineModel.findOne({ _id: airlineId, active: true, verified: true });
+    const airline = await this.airlineModel.findOne({
+      _id: airlineId,
+      active: true,
+      verified: true,
+    });
     if (!airline) throw new ForbiddenException('Airline is not active and verified');
     const {
       flightNumber,
@@ -94,7 +143,10 @@ export class FlightsService {
       );
     }
 
-    for (const [cabinName, cabinData] of Object.entries(cabins) as [string, { seatCount: number }][]) {
+    for (const [cabinName, cabinData] of Object.entries(cabins) as [
+      string,
+      { seatCount: number },
+    ][]) {
       if (!Number.isInteger(cabinData.seatCount) || cabinData.seatCount <= 0) {
         throw new BadRequestException(
           `Cabin seat counts must be positive whole numbers (${cabinName}).`,
@@ -137,7 +189,10 @@ export class FlightsService {
       arrivalAirport: destination,
       [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
     };
-    const activeProfiles = await this.airlineModel.find({ active: true, verified: true }).select('_id moderatorId').lean();
+    const activeProfiles = await this.airlineModel
+      .find({ active: true, verified: true })
+      .select('_id moderatorId')
+      .lean();
     const activeAirlines = activeProfiles.flatMap((profile) => [profile._id, profile.moderatorId]);
     query.airlineId = { $in: activeAirlines };
 
@@ -167,15 +222,25 @@ export class FlightsService {
 
   // FLT-15, FLT-17: Flight Detail & Moderator Passenger Views
   async getFlightById(flightId: string) {
-    const activeProfiles = await this.airlineModel.find({ active: true, verified: true }).select('_id moderatorId').lean();
+    const activeProfiles = await this.airlineModel
+      .find({ active: true, verified: true })
+      .select('_id moderatorId')
+      .lean();
     const activeAirlines = activeProfiles.flatMap((profile) => [profile._id, profile.moderatorId]);
-    const flight = await this.flightModel.findOne({ _id: flightId, airlineId: { $in: activeAirlines } }).populate('airlineId');
+    const flight = await this.flightModel
+      .findOne({ _id: flightId, airlineId: { $in: activeAirlines } })
+      .populate('airlineId');
     if (!flight) throw new NotFoundException('Flight not found');
     return flight;
   }
 
   // FLT-29, FLT-30: Automatic status transitions & airport locking rules
-  async updateFlight(flightId: string, airlineId: string, dto: UpdateFlightDto, legacyModeratorId?: string) {
+  async updateFlight(
+    flightId: string,
+    airlineId: string,
+    dto: UpdateFlightDto,
+    legacyModeratorId?: string,
+  ) {
     const updateDto = definedOnly(dto);
     const flight = await this.flightModel.findById(flightId);
     if (!flight) throw new NotFoundException('Flight not found');
