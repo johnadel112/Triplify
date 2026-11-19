@@ -15,9 +15,13 @@ export class BlogComment {
   /** GEN-10: hidden by an administrator; comment listings must exclude it. */
   @Prop({ type: Boolean, default: false })
   hidden!: boolean;
+
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export const BlogCommentSchema = SchemaFactory.createForClass(BlogComment);
+BlogCommentSchema.index({ postId: 1, hidden: 1, createdAt: -1, _id: -1 });
 
 @Schema({ timestamps: true })
 export class PostLike {

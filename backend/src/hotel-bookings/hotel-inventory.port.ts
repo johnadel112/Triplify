@@ -52,6 +52,8 @@ export interface RoomInventorySnapshot {
 export interface HotelInventoryPort {
   /** Returns null for an unknown hotel. Read inside `session` when one is supplied. */
   getHotel(hotelId: string, session?: ClientSession): Promise<HotelInventorySnapshot | null>;
+  /** Atomically coordinates confirmation with provider deactivation in the same transaction. */
+  coordinateConfirmation?(hotelId: string, session: ClientSession): Promise<boolean>;
   /** Returns the requested rooms that exist; unknown IDs are simply omitted. */
   getRooms(
     hotelId: string,

@@ -9,7 +9,6 @@ import request from 'supertest';
 import { hash } from 'bcryptjs';
 import { AccountStatus, UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
-import { PROVIDER_MANAGEMENT } from '../src/integrations/contracts';
 import { configureApp } from '../src/bootstrap';
 import { FlightBooking } from '../src/flight-bookings/flight-booking.schema';
 import { AirlineProfile, Flight } from '../src/flights/flights.schema';
@@ -23,6 +22,8 @@ import { UsersService } from '../src/users/users.service';
 import { Notification } from '../src/notifications/notifications.schema';
 import { signedEvent, webhookTestSecret } from './stripe-test-signature';
 import { RefundsService } from '../src/payments/refunds.service';
+import { Hotel } from '../src/hotels/hotel.schema';
+import { AdminService } from '../src/admin/admin.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -38,6 +39,7 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
   let flightBookings: Model<FlightBooking>;
   let flights: Model<Flight>;
   let airlines: Model<AirlineProfile>;
+  let hotels: Model<Hotel>;
   let passwordHash: string;
   const password = 'Secure12345';
   const now = () => Date.now();
@@ -53,6 +55,9 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
       .set('Cookie', cookies);
   const get = (path: string, cookies: string[]) =>
     request(server()).get(`/api${path}`).set('Cookie', cookies);
+  const patch = (path: string, cookies: string[]) =>
+    request(server()).patch(`/api${path}`).set('Origin', 'http://localhost:5173')
+      .set('X-Triplify-CSRF', '1').set('Cookie', cookies);
 
   async function account(role = UserRole.USER) {
     const user = await users.create({
@@ -161,11 +166,8 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     process.env.COOKIE_SECURE = 'false';
     process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
     const { AppModule } = await import('../src/app.module');
-    // BOOKING_ACCESS and BOOKING_READER are the real adapters here; only provider management is mocked.
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PROVIDER_MANAGEMENT)
-      .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
-      .compile();
+    // Booking and provider integration adapters are real in this suite.
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication({ rawBody: true });
     app.useLogger(false);
     configureApp(app);
@@ -175,6 +177,7 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     flightBookings = app.get(getModelToken(FlightBooking.name));
     flights = app.get(getModelToken(Flight.name));
     airlines = app.get(getModelToken(AirlineProfile.name));
+    hotels = app.get(getModelToken(Hotel.name));
     Object.assign(app.get(RefundsService), { stripe: { refunds: { create: refundCreate, retrieve: refundRetrieve } } });
     const db = app.get<Connection>(getConnectionToken());
     await Promise.all(Object.values(db.models).map((model) => model.init()));
@@ -199,7 +202,7 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     const airline = await airlines.create({ moderatorId, name: 'Nile Air' });
     const flight = await flights.create({
       flightNumber: 'MS777',
-      airlineId: moderatorId,
+      airlineId: airline._id,
       departureAirport: 'CAI',
       arrivalAirport: 'JFK',
       departureTimeUtc: new Date(now() + 30 * DAY),
@@ -345,6 +348,55 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     expect(refundCreate.mock.calls[0][1]).toEqual(refundCreate.mock.calls[1][1]);
   });
 
+  it('PAY-02: returns and stores the owned flight policy snapshot, never hardcoded tiers', async () => {
+    const { traveler, draft } = await pendingPaidFlight();
+    const policies = await get(`/bookings/FLIGHT/${draft._id}/policies`, traveler.cookies).expect(200);
+    expect(policies.body.policies).toMatchObject({
+      cancellationPolicy: { tiers: [{ hoursBeforeDeparture: 48, refundPercentage: 50 }] },
+      baggagePolicy: { legs: [{ extraBaggagePricePerKg: 0, currency: 'USD' }] },
+    });
+    const accepted = await post(`/bookings/FLIGHT/${draft._id}/accept-policies`, traveler.cookies)
+      .send({ accepted: true }).expect(201);
+    expect(accepted.body.accepted).toBe(true);
+    const stored = await app.get<Model<PolicyAcceptance>>(getModelToken(PolicyAcceptance.name))
+      .findOne({ bookingId: String(draft._id), userId: traveler.user._id }).lean();
+    expect(stored?.snapshotPolicies).toEqual(policies.body.policies);
+    const stranger = await account();
+    await get(`/bookings/FLIGHT/${draft._id}/policies`, stranger.cookies).expect(404);
+  });
+
+  it('PAY-02: returns the hotel policy snapshot attached to the booking', async () => {
+    const traveler = await account();
+    const booking = await hotelBooking(traveler.user._id, HotelBookingStatus.PENDING_PAYMENT, 5);
+    await hotelBookings.updateOne({ _id: booking._id }, { $set: { policy: {
+      checkInTime: '16:30', checkOutTime: '10:15', cancellationTiers: [{ daysBefore: 9, refundPercentage: 75 }],
+    } } });
+    const policies = await get(`/bookings/HOTEL/${booking._id}/policies`, traveler.cookies).expect(200);
+    expect(policies.body.policies).toEqual({
+      checkInTime: '16:30', checkOutTime: '10:15',
+      cancellationPolicy: { tiers: [{ daysBefore: 9, refundPercentage: 75 }] },
+    });
+  });
+
+  it('ACC-15: admins verify and deactivate real providers; public search excludes inactive airlines', async () => {
+    const admin = await account(UserRole.ADMIN);
+    const { airline, flight } = await airlineFlight();
+    await airlines.updateOne({ _id: airline._id }, { $set: { verified: false, active: false } });
+    await patch(`/admin/providers/airlines/${airline._id}/verify`, admin.cookies).expect(200);
+    await patch(`/admin/providers/airlines/${airline._id}/reactivate`, admin.cookies).expect(200);
+    expect((await airlines.findById(airline._id))?.toObject()).toMatchObject({ verified: true, active: true });
+    expect((await get('/flights/search?origin=CAI&destination=JFK', admin.cookies)).body.outbound).toHaveLength(1);
+    await patch(`/admin/providers/airlines/${airline._id}/deactivate`, admin.cookies).expect(200);
+    expect((await get('/flights/search?origin=CAI&destination=JFK', admin.cookies)).body.outbound).toHaveLength(0);
+    expect(await flights.exists({ _id: flight._id })).toBeTruthy();
+
+    const hotel = await hotels.create({ name: 'Provider Hotel', description: 'A hotel', city: 'Cairo',
+      country: 'Egypt', address: '1 Nile St', starClass: 4, timeZone: 'Africa/Cairo', active: false, verified: false });
+    await patch(`/admin/providers/hotels/${hotel._id}/verify`, admin.cookies).expect(200);
+    await patch(`/admin/providers/hotels/${hotel._id}/reactivate`, admin.cookies).expect(200);
+    expect((await hotels.findById(hotel._id))?.toObject()).toMatchObject({ verified: true, active: true });
+  });
+
   it('ACC-12: overlapping deactivation and confirmation cannot both commit', async () => {
     const { traveler, draft, payment, service } = await pendingPaidFlight();
     await app.get<Model<Payment>>(getModelToken(Payment.name)).updateOne({ _id: payment._id }, { $set: { status: 'SUCCEEDED' } });
@@ -371,6 +423,44 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
       expect(accountState?.status === AccountStatus.DEACTIVATED && bookingState?.status === 'CONFIRMED').toBe(false);
       if (bookingState?.status === 'CONFIRMED') expect(results[1].status).toBe('rejected');
       else expect(accountState?.status).toBe(AccountStatus.DEACTIVATED);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('ACC-15: overlapping airline deactivation and confirmation cannot both commit', async () => {
+    const admin = await account(UserRole.ADMIN);
+    const { draft, payment, service } = await pendingPaidFlight();
+    const booking = await flightBookings.findById(draft._id).lean();
+    const flight = await flights.findById(booking!.legs[0].flightId).lean();
+    await app.get<Model<Payment>>(getModelToken(Payment.name)).updateOne({ _id: payment._id }, { $set: { status: 'SUCCEEDED' } });
+    const original = airlines.updateOne.bind(airlines);
+    let arrivals = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const spy = jest.spyOn(airlines, 'updateOne').mockImplementation(((...args: Parameters<typeof airlines.updateOne>) => {
+      const operation = original(...args);
+      if (arrivals >= 2) return operation;
+      arrivals++;
+      if (arrivals === 2) release();
+      return gate.then(() => operation);
+    }) as typeof airlines.updateOne);
+    try {
+      await Promise.allSettled([
+        service.confirmPayment(String(draft._id), String(payment._id)),
+        app.get(AdminService).provider({ id: admin.user.id as string, name: admin.user.name, role: UserRole.ADMIN,
+          status: AccountStatus.ACTIVE, mustChangePassword: false, authVersion: 0, sessionId: '' },
+        'AIRLINE', flight!.airlineId.toString(), false),
+      ]);
+      expect(arrivals).toBe(2);
+      const provider = await airlines.findById(flight!.airlineId);
+      const finalBooking = await flightBookings.findById(draft._id);
+      // Confirm-then-deactivate is valid (existing confirmed bookings remain valid). In that
+      // outcome MongoDB must have aborted/retried one callback, proving a serialized order.
+      if (provider?.active === false && finalBooking?.status === 'CONFIRMED') {
+        expect(spy.mock.calls.length).toBeGreaterThan(2);
+      } else {
+        expect(finalBooking?.status).not.toBe('CONFIRMED');
+        expect(provider?.active).toBe(false);
+      }
     } finally { spy.mockRestore(); }
   });
 

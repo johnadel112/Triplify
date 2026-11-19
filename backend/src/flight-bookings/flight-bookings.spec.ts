@@ -10,7 +10,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Model, Types } from 'mongoose';
 import { FlightBookingsModule } from './flight-bookings.module';
 import { FlightBookingsService, REFUNDS_PORT } from './flight-bookings.service';
-import { Flight } from '../flights/flights.schema';
+import { AirlineProfile, Flight } from '../flights/flights.schema';
 import { FlightBooking } from './flight-booking.schema';
 import { User } from '../users/user.schema';
 import { Payment } from '../payments/payments.schema';
@@ -22,6 +22,7 @@ describe('flight booking concurrency', () => {
   let repl: MongoMemoryReplSet;
   let service: FlightBookingsService;
   let flights: Model<Flight>;
+  let airlines: Model<AirlineProfile>;
   let bookings: Model<FlightBooking>;
   let users: Model<User>;
   let payments: Model<Payment>;
@@ -36,6 +37,7 @@ describe('flight booking concurrency', () => {
     await mod.init();
     service = mod.get(FlightBookingsService);
     flights = mod.get(getModelToken(Flight.name));
+    airlines = mod.get(getModelToken(AirlineProfile.name));
     bookings = mod.get(getModelToken(FlightBooking.name));
     users = mod.get(getModelToken(User.name));
     payments = mod.get(getModelToken(Payment.name));
@@ -53,9 +55,10 @@ describe('flight booking concurrency', () => {
 
   const newFlight = async (seatCount: number) => {
     const dep = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const airline = await airlines.create({ moderatorId: new Types.ObjectId(), name: 'Fixture Air', active: true, verified: true });
     return flights.create({
       flightNumber: `TP${Math.floor(Math.random() * 9000 + 1000)}`,
-      airlineId: new Types.ObjectId(),
+      airlineId: airline._id,
       departureAirport: 'CAI',
       arrivalAirport: 'DXB',
       departureTimeUtc: dep,

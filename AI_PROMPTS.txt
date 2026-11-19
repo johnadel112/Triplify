@@ -204,3 +204,14 @@ How the output was used:
 Connected verified Stripe events to transactional flight confirmation; verified amount/currency/metadata and payment ownership; added active-account coordination writes and atomic confirmation notifications. Added payment creation deduplication and monotonic webhook status changes. Registered the refund adapter using a shared RefundsModule. Refund eligibility and amounts now come from persisted booking cancellation records. Refund jobs, failure states, stable provider retry keys, pending-status reconciliation and deduplicated notifications are persisted. Added replica-set concurrency, signed HTTP lifecycle, refund ownership, spoofed-policy, pending and failure-recovery tests. Removed invented default refund tiers. No production data migration or real Stripe/Atlas operation was performed.
 Validation at this point: lint/build pass; 107 unit tests and 85 e2e tests pass. A temporary intermediate return-type error and an incomplete currency fixture were corrected before these passes.
 ================================================
+
+================================================
+Date: 2026-11-19
+Contributor: Codex, at repository user's request
+Tool: OpenAI Codex
+Related Requirement: ACC-15, PAY-02, BLG-05, FLT-01, FLT-03
+Prompt (excerpt from the supplied finalization request):
+"Fix provider management"; "Replace hardcoded check-in information and cancellation tiers with the actual policies"; "Implement the endpoint for listing comments"; "Store the correct airline identifier from the moderator's authorized providerId."
+How the output was used:
+Replaced the fail-closed provider placeholder with a transactional hotel/airline adapter, admin verification and activation endpoints, audit records, active-provider public filters, and provider-document coordination during confirmation. Replaced hardcoded payment policies with owned booking snapshots and stored the displayed acceptance snapshot. Added public visible-comment pagination with moderation filters and safe deactivated-author attribution. New flight writes use the authenticated providerId, legacy moderator-ID rows remain compatible, and an idempotent dry-run migration script is provided. Added unit/e2e coverage for transitions, policy ownership, provider races, inactive search visibility, comments and migration-facing compatibility. No production migration was run.
+================================================

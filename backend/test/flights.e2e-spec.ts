@@ -10,7 +10,7 @@ import { hash } from 'bcryptjs';
 import { UserRole } from '../src/common/domain';
 import { User } from '../src/users/user.schema';
 import { Airport } from '../src/reference-data/reference.schema';
-import { Flight } from '../src/flights/flights.schema';
+import { AirlineProfile, Flight } from '../src/flights/flights.schema';
 import { BOOKING_ACCESS, BOOKING_READER, PROVIDER_MANAGEMENT } from '../src/integrations/contracts';
 import { configureApp } from '../src/bootstrap';
 
@@ -35,13 +35,17 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
     `${new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)}T${time}`;
 
   async function moderator() {
+    const providerId = new Types.ObjectId();
     const user = await users.create({
       name: 'Airline Mod',
       email: `${new Types.ObjectId().toString()}@example.com`,
       passwordHash,
       role: UserRole.AIRLINE_MODERATOR,
-      providerId: new Types.ObjectId(),
+      providerId,
       providerType: 'AIRLINE',
+    });
+    await app.get<Model<AirlineProfile>>(getModelToken(AirlineProfile.name)).create({
+      _id: providerId, moderatorId: user._id, name: 'Fixture Air', active: true, verified: true,
     });
     const response = await post('/auth/login').send({ email: user.email, password });
     expect(response.status).toBe(200);

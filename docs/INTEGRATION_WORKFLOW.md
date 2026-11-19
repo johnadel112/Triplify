@@ -79,12 +79,24 @@ reconciliation before any new request, avoiding blind retry after Stripe key exp
 Do not mark pending refunds successful in UI. Review historical payment/refund duplicates
 before deployment; existing records are not silently migrated.
 
+Historical flights whose `airlineId` contains the moderator user ID remain readable and
+bookable through a compatibility lookup. Validate the migration against a backup with:
+
+```sh
+npm run migrate:flight-airlines
+```
+
+This is dry-run by default and prints proposed counts. Only after reviewing the output and
+selecting the correct non-production database, run `npm run migrate:flight-airlines -- --apply`.
+The update is idempotent and prints remaining legacy rows. It is never run automatically.
+
 References: [Nest raw body](https://docs.nestjs.com/faq/raw-body),
 [Stripe signature verification](https://docs.stripe.com/webhooks/signature).
 
 ## Latest local evidence
 
 On 2026-11-19, after the lockfile security update: `npm ci`, lint and build passed;
-108 unit tests and 85 e2e tests passed; `npm audit --json` reported zero
+111 unit tests and 90 e2e tests passed;
+`npm audit --json` reported zero
 vulnerabilities. The test runner emitted a MaxListeners warning during the combined
-e2e process, but all suites completed. Hosted CI remains pending until this commit is pushed.
+e2e process, but all suites completed. The branches are pushed; hosted CI remains pending.

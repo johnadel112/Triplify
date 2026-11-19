@@ -42,7 +42,7 @@ export class RoomsService {
   private async requireHotel(hotelId: string, activeOnly = true) {
     const hotel = await this.hotels.findOne({
       _id: hotelId,
-      ...(activeOnly ? { active: true } : {}),
+      ...(activeOnly ? { active: true, verified: true } : {}),
     }).select('_id timeZone').lean();
     if (!hotel) throw new NotFoundException('Hotel not found');
     return hotel;

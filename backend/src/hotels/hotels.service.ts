@@ -59,7 +59,7 @@ export class HotelsService {
 
   // HTL-02: Public hotel profile (moderator data excluded).
   async findById(hotelId: string) {
-    const hotel = await this.hotelModel.findOne({ _id: hotelId, active: true })
+    const hotel = await this.hotelModel.findOne({ _id: hotelId, active: true, verified: true })
       .select('-moderatorId -__v').exec();
     if (!hotel) throw new NotFoundException('Hotel not found');
     return hotel;

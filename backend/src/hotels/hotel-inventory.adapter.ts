@@ -24,14 +24,14 @@ export class HotelInventoryAdapter implements HotelInventoryPort {
   async getHotel(hotelId: string, session?: ClientSession): Promise<HotelInventorySnapshot | null> {
     if (!isValidObjectId(hotelId)) return null;
     const query = this.hotels.findById(hotelId)
-      .select('name active timeZone checkInTime checkOutTime cancellationTiers');
+      .select('name active verified timeZone checkInTime checkOutTime cancellationTiers');
     if (session) query.session(session);
     const hotel = await query.lean();
     if (!hotel) return null;
     return {
       id: String(hotel._id),
       name: hotel.name,
-      active: hotel.active,
+      active: hotel.active && hotel.verified,
       timeZone: hotel.timeZone,
       checkInTime: hotel.checkInTime,
       checkOutTime: hotel.checkOutTime,
@@ -40,6 +40,16 @@ export class HotelInventoryAdapter implements HotelInventoryPort {
         refundPercentage: tier.refundPercentage,
       })),
     };
+  }
+
+  async coordinateConfirmation(hotelId: string, session: ClientSession) {
+    if (!isValidObjectId(hotelId)) return false;
+    const result = await this.hotels.updateOne(
+      { _id: new Types.ObjectId(hotelId), active: true, verified: true },
+      { $inc: { bookingRevision: 1 } },
+      { session },
+    );
+    return result.modifiedCount === 1;
   }
 
   async getRooms(

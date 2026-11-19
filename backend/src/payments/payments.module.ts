@@ -18,6 +18,7 @@ import { FlightBooking, FlightBookingSchema } from '../flight-bookings/flight-bo
 import { HotelBooking, HotelBookingSchema } from '../hotel-bookings/hotel-booking.schema';
 import { BookingPaymentSource } from './booking-payment-source';
 import { FlightBookingsModule } from '../flight-bookings/flight-bookings.module';
+import { Flight, FlightSchema } from '../flights/flights.schema';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { FlightBookingsModule } from '../flight-bookings/flight-bookings.module'
       { name: Refund.name, schema: RefundSchema },
       { name: FlightBooking.name, schema: FlightBookingSchema },
       { name: HotelBooking.name, schema: HotelBookingSchema },
+      { name: Flight.name, schema: FlightSchema },
     ]),
     NotificationsModule,
     RefundsModule,

@@ -6,7 +6,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
-import { Flight } from '../flights/flights.schema';
+import { AirlineProfile, Flight } from '../flights/flights.schema';
 import { Airport } from '../reference-data/reference.schema';
 import { BookingLeg, FlightBooking } from './flight-booking.schema';
 import { CreateFlightBookingDto, ListBookingsQuery } from './flight-bookings.dto';
@@ -33,6 +33,7 @@ export interface RefundsPort {
 
 type FlightLean = {
   _id: Types.ObjectId;
+  airlineId: Types.ObjectId;
   flightNumber: string;
   departureAirport: string;
   arrivalAirport: string;
@@ -72,6 +73,7 @@ export class FlightBookingsService {
     @InjectModel(User.name) private readonly users: Model<User>,
     @InjectModel(Payment.name) private readonly payments: Model<Payment>,
     @InjectModel(Notification.name) private readonly notifications: Model<Notification>,
+    @InjectModel(AirlineProfile.name) private readonly airlines: Model<AirlineProfile>,
     @Optional() @Inject(REFUNDS_PORT) private readonly refunds?: RefundsPort,
   ) {}
 
@@ -114,6 +116,10 @@ export class FlightBookingsService {
     for (const [i, l] of dto.legs.entries()) {
       const flight = (await this.flights.findById(toOid(l.flightId)).lean()) as unknown as FlightLean | null;
       if (!flight || flight.status !== 'SCHEDULED') throw new NotFoundException('Flight not available');
+      const airline = await this.airlines.exists({
+        $or: [{ _id: flight.airlineId }, { moderatorId: flight.airlineId }], active: true, verified: true,
+      });
+      if (!airline) throw new NotFoundException('Flight not available');
       if (flight.departureTimeUtc <= new Date()) throw new BadRequestException('Flight already departed');
       const cabin = flight.cabins?.[l.cabinClass];
       if (!cabin) throw new NotFoundException(`Cabin ${l.cabinClass} not found on flight`);
@@ -231,6 +237,13 @@ export class FlightBookingsService {
         return { confirmed: false as const, reason: 'ACCOUNT_NOT_ACTIVE' };
       }
       for (const leg of booking.legs) {
+        const source = await this.flights.findById(leg.flightId).session(session).lean();
+        if (!source) throw new ConflictException('Flight is no longer bookable');
+        const provider = await this.airlines.updateOne(
+          { $or: [{ _id: source.airlineId }, { moderatorId: source.airlineId }], active: true, verified: true },
+          { $inc: { bookingRevision: 1 } }, { session },
+        );
+        if (provider.modifiedCount !== 1) throw new ConflictException('Airline is no longer bookable');
         const flight = await this.flights.updateOne(
           { _id: leg.flightId, status: 'SCHEDULED', departureTimeUtc: { $gt: now } },
           { $set: { hasConfirmedBookings: true } }, { session },

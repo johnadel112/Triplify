@@ -14,6 +14,15 @@ export class AirlineProfile extends Document {
 
   @Prop({ type: String })
   contactEmail?: string;
+
+  @Prop({ type: Boolean, default: true, index: true })
+  verified!: boolean;
+
+  @Prop({ type: Boolean, default: true, index: true })
+  active!: boolean;
+
+  @Prop({ type: Number, default: 0, select: false })
+  bookingRevision!: number;
 }
 
 @Schema({ timestamps: true })

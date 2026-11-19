@@ -127,7 +127,7 @@ export class HotelDiscoveryService {
     if (query.guests < query.rooms) {
       throw new BadRequestException('Guest count must be at least the number of requested rooms');
     }
-    const hotelFilter: Record<string, unknown> = { active: true };
+    const hotelFilter: Record<string, unknown> = { active: true, verified: true };
     if (query.city?.trim()) hotelFilter.city = escapedExactRegex(query.city);
     if (query.country?.trim()) hotelFilter.country = escapedExactRegex(query.country);
 
@@ -190,7 +190,7 @@ export class HotelDiscoveryService {
   /** HTL-15: all rooms free for the requested stay, with individual stay totals. */
   async availableRooms(hotelId: string, query: AvailableRoomsQuery) {
     const nights = this.validateDates(query.checkInDate, query.checkOutDate);
-    const hotel = await this.hotels.findOne({ _id: hotelId, active: true })
+    const hotel = await this.hotels.findOne({ _id: hotelId, active: true, verified: true })
       .select('name timeZone').lean();
     if (!hotel) throw new NotFoundException('Hotel not found');
     if (query.checkInDate < hotelToday(hotel.timeZone)) {

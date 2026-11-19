@@ -357,6 +357,9 @@ export class HotelBookingsService implements OnModuleInit {
       if (!failure) {
         const hotel = await this.inventory.getHotel(current.providerId.toString(), session);
         if (!hotel?.active) failure = 'HOTEL_NOT_BOOKABLE';
+        else if (this.inventory.coordinateConfirmation &&
+          !(await this.inventory.coordinateConfirmation(current.providerId.toString(), session)))
+          failure = 'HOTEL_NOT_BOOKABLE';
       }
 
       if (failure) {

@@ -25,12 +25,12 @@ is **not submission-ready**. No merge to main is authorized.
 | Flight confirmation and delayed-payment reconciliation | Zeyad/Divan | CRITICAL | FLT-23, PAY-01 | VERIFIED | Signed HTTP integration, duplicate/out-of-order events, amount/owner mismatch and expired hold refund tests | Working branch |
 | Refund adapter, durable retries and idempotency | Zeyad/Divan | CRITICAL | FLT-26, PAY-03 | VERIFIED | Real local DB + mocked provider: eligible cancellation, correct amount, ownership, spoofed reason, retries, pending reconciliation and provider failure | Working branch |
 | Confirmation/account deactivation serialization | Zeyad/John | CRITICAL | ACC-12 | VERIFIED | Forced overlapping transactions in booking-integration.e2e-spec.ts; exactly one state can commit | Working branch |
-| Develop workflow, CI and integration PR | John | CRITICAL | Milestone 1 | IN PROGRESS | Workflow covers all requested branches and caches test replica-set binary; develop/PR publication pending final local run | Pending |
-| Provider management and booking eligibility | Magdy/Yassin | HIGH | ACC-15 | NOT STARTED | PROVIDER_MANAGEMENT remains fail-closed placeholder | Pending |
-| Actual policies | Divan | HIGH | PAY-02 | NOT STARTED | PoliciesController still returns hardcoded policies; blocks submission readiness | Pending |
+| Develop workflow, CI and integration PR | John | CRITICAL | Milestone 1 | BLOCKED | develop and repair branches pushed; GitHub app rejected draft PR creation with HTTP 403 and local gh token is expired | Compare link below |
+| Provider management and booking eligibility | Magdy/Yassin | HIGH | ACC-15 | VERIFIED | Real adapter, admin verify/active transitions, audit, public search exclusion and provider-confirmation transaction race test | Working branch |
+| Actual policies | Divan | HIGH | PAY-02 | VERIFIED | Owned flight/hotel snapshot reads and acceptance snapshot e2e tests; no hardcoded tiers | Working branch |
 | Confirmation notification ownership | Divan | HIGH | GEN-01 | VERIFIED | Booking services own notifications; concurrent flight webhooks produce one; existing hotel notification test passes | Working branch |
-| Visible comment listing | Yassin | HIGH | BLG-05 | NOT STARTED | No listing endpoint | Pending |
-| Airline provider ownership and dry-run migration | Yassin | HIGH | FLT-01, FLT-03 | NOT STARTED | Requires providerId mapping review | Pending |
+| Visible comment listing | Yassin | HIGH | BLG-05 | VERIFIED | Public listing excludes hidden/deleted comments; 10-row stable pages and deactivated attribution tested | Working branch |
+| Airline provider ownership and dry-run migration | Yassin | HIGH | FLT-01, FLT-03 | VERIFIED | New writes use Principal.providerId; legacy lookup retained; dry-run/apply idempotent script documented | Working branch |
 | Atlas verification | Team | HIGH | Database integration | BLOCKED | No securely supplied Atlas test credentials; URI validator accepts mongodb+srv | Pending |
 | Frontend foundation, auth, API matrix and allocation | Team | HIGH | Milestone 2 | NOT STARTED | frontend directory absent | Pending |
 | Dependency vulnerability remediation | Team | CRITICAL | GEN-13 | VERIFIED | npm audit fix updated lockfile; npm audit reports 0 vulnerabilities; npm ci succeeded | Working branch |
@@ -65,8 +65,8 @@ the real Stripe SDK cryptography with local test secrets; provider API responses
 
 ## Second repair batch
 
-`npm.cmd run lint`, `npm.cmd run build`, `npm.cmd test -- --runInBand` (108 tests),
-and `npm.cmd run test:e2e -- --runInBand` (85 tests) passed. Both DB-backed test suites
+`npm.cmd run lint`, `npm.cmd run build`, `npm.cmd test -- --runInBand` (111 tests),
+and `npm.cmd run test:e2e -- --runInBand` (90 tests) passed as the Stage B gate. Both DB-backed test suites
 use isolated local replica sets. An intermediate TypeScript return-type error and missing
 currency on a unit fixture were fixed, then the full suites were rerun successfully.
 
@@ -74,4 +74,6 @@ External Stripe sandbox, actual Atlas connectivity and hosted GitHub Actions res
 unverified. Existing historical duplicate payment/refund records need a read-only deployment
 audit. No records were migrated. Jobs with no provider reference older than 23 hours are not
 blindly retried through Stripe. Provider activation/confirmation serialization and policy
-display remain Stage B work; this is not a claim that all Milestone 1 requirements are ready.
+display are now implemented and locally covered. Hosted CI and the draft PR remain blocked by
+GitHub application/CLI authorization. Create the draft from:
+https://github.com/johnadel112/Triplify/compare/main...develop?expand=1

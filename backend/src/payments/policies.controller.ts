@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseEnumPipe, Post } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -7,6 +7,10 @@ import { Principal } from '../common/domain';
 import { BookingType } from './payments.constants';
 import { PolicyAcceptance } from './payments.schema';
 import { AcceptPoliciesDto } from './payments.dto';
+import { FlightBooking } from '../flight-bookings/flight-booking.schema';
+import { HotelBooking } from '../hotel-bookings/hotel-booking.schema';
+import { Flight } from '../flights/flights.schema';
+import { ObjectIdPipe } from '../common/http';
 
 @ApiTags('Policies')
 @ApiCookieAuth()
@@ -15,7 +19,41 @@ export class PoliciesController {
   constructor(
     @InjectModel(PolicyAcceptance.name)
     private readonly policyAcceptanceModel: Model<PolicyAcceptance>,
+    @InjectModel(FlightBooking.name) private readonly flightBookings: Model<FlightBooking>,
+    @InjectModel(HotelBooking.name) private readonly hotelBookings: Model<HotelBooking>,
+    @InjectModel(Flight.name) private readonly flights: Model<Flight>,
   ) {}
+
+  private async policies(actor: Principal, type: BookingType, bookingId: string) {
+    const owner = new Types.ObjectId(actor.id);
+    const id = new Types.ObjectId(bookingId);
+    if (type === BookingType.HOTEL) {
+      const booking = await this.hotelBookings.findOne({ _id: id, userId: owner }).lean();
+      if (!booking) throw new NotFoundException('Booking not found');
+      return {
+        checkInTime: booking.policy.checkInTime,
+        checkOutTime: booking.policy.checkOutTime,
+        cancellationPolicy: { tiers: booking.policy.cancellationTiers },
+      };
+    }
+    const booking = await this.flightBookings.findOne({ _id: id, userId: owner }).lean();
+    if (!booking) throw new NotFoundException('Booking not found');
+    const flights = await this.flights.find({ _id: { $in: booking.legs.map((leg) => leg.flightId) } })
+      .select('_id flightNumber extraBaggagePricePerKg').lean();
+    const baggageByFlight = new Map(flights.map((flight) => [flight._id.toString(), flight]));
+    return {
+      cancellationPolicy: { tiers: booking.cancellationPolicy },
+      baggagePolicy: {
+        note: 'No free-baggage allowance is configured; only provider extra-baggage pricing is available.',
+        legs: booking.legs.map((leg) => ({
+          flightId: leg.flightId.toString(),
+          flightNumber: leg.flightNumber,
+          extraBaggagePricePerKg: baggageByFlight.get(leg.flightId.toString())?.extraBaggagePricePerKg ?? 0,
+          currency: booking.currency,
+        })),
+      },
+    };
+  }
 
   @Get(':type/:id/policies')
   @ApiOperation({
@@ -24,46 +62,11 @@ export class PoliciesController {
   })
   @ApiResponse({ status: 200, description: 'Provider policies returned' })
   async getPolicies(
-    @Param('type') type: BookingType,
-    @Param('id') bookingId: string,
+    @CurrentUser() actor: Principal,
+    @Param('type', new ParseEnumPipe(BookingType)) type: BookingType,
+    @Param('id', ObjectIdPipe) bookingId: string,
   ) {
-    if (type === BookingType.FLIGHT) {
-      return {
-        bookingId,
-        bookingType: type,
-        policies: {
-          baggagePolicy: {
-            allowance: '1 free bag up to 23kg',
-            extraBagFee: 'USD 50.00 per additional bag',
-          },
-          cancellationPolicy: {
-            tiers: [
-              { daysBefore: 7, refundPercentage: 100 },
-              { daysBefore: 2, refundPercentage: 50 },
-              { daysBefore: 0, refundPercentage: 0 },
-            ],
-            notes: 'Cancellations within 48 hours of departure are non-refundable.',
-          },
-        },
-      };
-    }
-
-    return {
-      bookingId,
-      bookingType: type,
-      policies: {
-        checkInTime: '15:00',
-        checkOutTime: '11:00',
-        cancellationPolicy: {
-          tiers: [
-            { daysBefore: 3, refundPercentage: 100 },
-            { daysBefore: 1, refundPercentage: 50 },
-            { daysBefore: 0, refundPercentage: 0 },
-          ],
-          notes: 'Free cancellation up to 3 days before check-in.',
-        },
-      },
-    };
+    return { bookingId, bookingType: type, policies: await this.policies(actor, type, bookingId) };
   }
 
   @Post(':type/:id/accept-policies')
@@ -74,11 +77,12 @@ export class PoliciesController {
   @ApiResponse({ status: 200, description: 'Policy acceptance recorded with timestamp' })
   async acceptPolicies(
     @CurrentUser() actor: Principal,
-    @Param('type') type: BookingType,
-    @Param('id') bookingId: string,
+    @Param('type', new ParseEnumPipe(BookingType)) type: BookingType,
+    @Param('id', ObjectIdPipe) bookingId: string,
     @Body() dto: AcceptPoliciesDto,
   ) {
     const acceptedAt = new Date();
+    const snapshotPolicies = await this.policies(actor, type, bookingId);
 
     const record = await this.policyAcceptanceModel.findOneAndUpdate(
       {
@@ -89,6 +93,7 @@ export class PoliciesController {
         bookingType: type,
         accepted: dto.accepted,
         acceptedAt,
+        snapshotPolicies,
       },
       { upsert: true, new: true },
     );
