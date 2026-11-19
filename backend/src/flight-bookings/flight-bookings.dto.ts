@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsMongoId,
@@ -34,7 +35,10 @@ export class HoldDto {
 }
 
 export class ListBookingsQuery {
+  @ApiPropertyOptional({ enum: ['upcoming', 'past', 'cancelled'], default: 'upcoming' })
   @IsOptional() @IsIn(['upcoming', 'past', 'cancelled']) tab?: 'upcoming' | 'past' | 'cancelled';
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @ApiPropertyOptional({ minimum: 1, maximum: 50, default: 10 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) limit?: number;
 }

@@ -162,6 +162,30 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     await del(`/admin/content/POST/${spam.id as string}`, admin.cookies).expect(404);
   });
 
+  it('ACC-12: posts and public itineraries of a deactivated author are hidden', async () => {
+    const author = await account();
+    const reader = await account();
+    const admin = await account(UserRole.ADMIN);
+    const live = await publishedPost(author.user._id);
+    const trip = await publicItinerary(author.user._id);
+    await get(`/blog/posts/${live.id as string}`).expect(200);
+    await get(`/itineraries/public/${trip.id as string}`).expect(200);
+
+    await users.updateOne({ _id: author.user._id }, { $set: { status: AccountStatus.DEACTIVATED } });
+
+    expect(JSON.stringify((await get('/blog/posts').expect(200)).body)).not.toContain(live.id as string);
+    await get(`/blog/posts/${live.id as string}`).expect(404);
+    await get(`/blog/posts/${live.id as string}/comments`).expect(404);
+    await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(404);
+    await post(`/blog/posts/${live.id as string}/comments`, reader.cookies).send({ content: 'hi' }).expect(404);
+    expect(JSON.stringify((await get('/itineraries/public/search').expect(200)).body)).not.toContain(trip.id as string);
+    await get(`/itineraries/public/${trip.id as string}`).expect(404);
+    await get(`/itineraries/${trip.id as string}`, reader.cookies).expect(403);
+    await post(`/itineraries/${trip.id as string}/clone`, reader.cookies).send({}).expect(403);
+    // Admins can still inspect it.
+    await get(`/itineraries/${trip.id as string}`, admin.cookies).expect(200);
+  });
+
   it('BLG-05: rejects non-string and over-long comments with 400', async () => {
     const author = await account();
     const live = await publishedPost(author.user._id);

@@ -19,7 +19,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     countDocuments: jest.Mock;
   };
   let mockItineraryModel: MockModel;
-  let mockUserModel: { findById: jest.Mock };
+  let mockUserModel: { findById: jest.Mock; exists: jest.Mock; find: jest.Mock };
   let mockCityModel: { findOne: jest.Mock };
   let mockCountryModel: { findOne: jest.Mock };
   let mockConfigService: { get: jest.Mock };
@@ -70,6 +70,9 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
     mockUserModel = {
       findById: jest.fn(),
+      // ACC-12 lookups: no deactivated owners in these tests.
+      exists: jest.fn().mockResolvedValue(null),
+      find: jest.fn(() => ({ distinct: jest.fn().mockResolvedValue([]) })),
     };
 
     mockCityModel = {
@@ -657,6 +660,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       expect(mockItineraryModel.find.mock.calls[0][0]).toEqual({
         isPublic: true,
         hidden: { $ne: true },
+        userId: { $nin: [] }, // ACC-12: deactivated owners are excluded
       });
     });
   });

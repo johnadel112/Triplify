@@ -81,10 +81,19 @@ export class RoomsService {
     }
   }
 
-  async listPublic(hotelId: string) {
+  /** GEN-05: room lists are paginated 10 per page. */
+  private async roomPage(filter: Record<string, unknown>, page: number) {
+    const [items, total] = await Promise.all([
+      this.rooms.find(filter).select(PUBLIC_ROOM_FIELDS).sort({ numberKey: 1 })
+        .skip((page - 1) * 10).limit(10).lean(),
+      this.rooms.countDocuments(filter),
+    ]);
+    return { items, total, page, limit: 10 };
+  }
+
+  async listPublic(hotelId: string, page = 1) {
     await this.requireHotel(hotelId);
-    return this.rooms.find({ hotelId, active: true })
-      .select(PUBLIC_ROOM_FIELDS).sort({ numberKey: 1 }).lean();
+    return this.roomPage({ hotelId, active: true }, page);
   }
 
   async getPublic(hotelId: string, roomId: string) {
@@ -95,11 +104,10 @@ export class RoomsService {
     return room;
   }
 
-  async listForModerator(hotelId: string, actor: Principal) {
+  async listForModerator(hotelId: string, actor: Principal, page = 1) {
     this.assertModerator(actor, hotelId);
     await this.requireHotel(hotelId, false);
-    return this.rooms.find({ hotelId }).select(PUBLIC_ROOM_FIELDS)
-      .sort({ numberKey: 1 }).lean();
+    return this.roomPage({ hotelId }, page);
   }
 
   async getForModerator(hotelId: string, roomId: string, actor: Principal) {

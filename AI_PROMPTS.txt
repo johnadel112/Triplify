@@ -338,3 +338,12 @@ Prompt:
 How the output was used:
 Checked each mandatory requirement in the official sheet against the code and confirmed the suspected bugs with a temporary probe test. Fixed flight edits (creation rules, local airport times, recalculated search date), the Departed status, schedule-change notifications, the flight minimum price filter and duration sort. Added the airline code and logo upload, hotel photo upload (up to 5), room deletion, the hotel minimum price filter, and real hotel and flight results for itinerary city groups. Added 10 e2e tests; build, lint, 121 unit and 110 e2e tests pass, npm audit reports 0 vulnerabilities and the route sweep finds no server errors.
 ================================================
+Date: 2026-11-20
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-05, FLT-11, FLT-17, ACC-12, HTL-12, ITN-03 (PR #23)
+Prompt:
+"Check the unverified requirements" (pagination of every list, passenger types, flight details, deactivated-user content, hotel sorting, review rules) and fix what is missing.
+How the output was used:
+Confirmed HTL-23 review rules were already correct. Paginated flight search, my itineraries, hotel room lists and a flight's booking list at 10 per page and documented the flight-booking list parameters in Swagger. Added adult/child/infant counts to flight search (infants need no seat), a flight details response with airline, local times, duration and per-cabin seats and baggage (no internal ids), hotel sorting by price or rating, and the ITN-03 order by most recently updated. Posts and public itineraries of deactivated accounts are now hidden from public pages, likes, comments and cloning. Added 7 e2e tests; 121 unit and 117 e2e tests pass.
+================================================

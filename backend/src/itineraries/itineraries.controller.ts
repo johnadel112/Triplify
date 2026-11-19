@@ -39,6 +39,7 @@ import { HotelSearchQuery } from '../hotels/hotel-discovery.dto';
 import { FlightsService } from '../flights/flights.service';
 import { SearchFlightsQuery } from '../flights/flights.dto';
 import { ObjectIdPipe } from '../common/http';
+import { PageDto } from '../common/dto';
 
 @ApiTags('Itineraries')
 @ApiCookieAuth()
@@ -89,10 +90,10 @@ export class ItinerariesController {
 
   @Get()
   @Roles(UserRole.USER, UserRole.ADMIN)
-  @ApiOperation({ summary: 'ITN-03: List all itineraries created by the authenticated user' })
+  @ApiOperation({ summary: 'ITN-03: My itineraries, most recently updated first (10 per page)' })
   @ApiOkResponse({ description: 'List of user itineraries' })
-  listMine(@CurrentUser() actor: Principal) {
-    return this.itinerariesService.listUserItineraries(actor);
+  listMine(@CurrentUser() actor: Principal, @Query() query: PageDto) {
+    return this.itinerariesService.listUserItineraries(actor, query.page);
   }
 
   @Get(':id')

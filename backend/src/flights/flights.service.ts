@@ -40,6 +40,7 @@ import {
 } from '../common/media';
 
 const AIRLINE_MEDIA_FOLDER = 'airlines';
+const FLIGHT_PAGE_SIZE = 10;
 const AIRLINE_MEDIA_PREFIX = '/api/airlines/media/';
 
 @Injectable()
@@ -268,7 +269,20 @@ export class FlightsService {
       minPrice,
       maxPrice,
       sortBy,
+      adults,
+      children = 0,
+      infants = 0,
+      page = 1,
     } = queryDto;
+    // FLT-11: with passenger types, seats are needed for adults and children; infants travel on a lap.
+    if ((children || infants) && adults === undefined) {
+      throw new BadRequestException('Give the number of adults when searching with children or infants');
+    }
+    if (adults !== undefined && infants > adults) {
+      throw new BadRequestException('Each infant must travel with an adult');
+    }
+    const seatsNeeded = adults !== undefined ? adults + children : Number(passengers);
+    if (seatsNeeded > 9) throw new BadRequestException('At most 9 seated passengers per search');
     if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
       throw new BadRequestException('minPrice cannot be greater than maxPrice');
     }
@@ -281,7 +295,7 @@ export class FlightsService {
     const query: FilterQuery<Flight> = {
       departureAirport: origin,
       arrivalAirport: destination,
-      [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
+      [`cabins.${cabinClass}.seatCount`]: { $gte: seatsNeeded },
       // FLT-30: only Scheduled flights that have not departed are searchable.
       status: 'SCHEDULED',
       departureTimeUtc: { $gt: now },
@@ -304,7 +318,7 @@ export class FlightsService {
         departureAirport: destination,
         arrivalAirport: origin,
         departureDate: returnDate,
-        [`cabins.${cabinClass}.seatCount`]: { $gte: Number(passengers) },
+        [`cabins.${cabinClass}.seatCount`]: { $gte: seatsNeeded },
         status: 'SCHEDULED',
         departureTimeUtc: { $gt: now },
         airlineId: { $in: activeAirlines },
@@ -313,7 +327,17 @@ export class FlightsService {
       returnFlights = this.sortFlights(await this.flightModel.find(returnQuery).exec(), cabinClass, sortBy);
     }
 
-    return { outbound, return: returnDate ? returnFlights : undefined };
+    // GEN-05: 10 results per page in each direction; totals let clients page through the rest.
+    const start = (page - 1) * FLIGHT_PAGE_SIZE;
+    return {
+      outbound: outbound.slice(start, start + FLIGHT_PAGE_SIZE),
+      return: returnDate ? returnFlights.slice(start, start + FLIGHT_PAGE_SIZE) : undefined,
+      page,
+      pageSize: FLIGHT_PAGE_SIZE,
+      outboundTotal: outbound.length,
+      returnTotal: returnDate ? returnFlights.length : undefined,
+      seatsNeeded,
+    };
   }
 
   /** ITN-26: IATA codes of the reference airports serving a city. */
@@ -350,9 +374,61 @@ export class FlightsService {
     const activeAirlines = activeProfiles.flatMap((profile) => [profile._id, profile.moderatorId]);
     const flight = await this.flightModel
       .findOne({ _id: flightId, airlineId: { $in: activeAirlines } })
-      .populate('airlineId');
+      .lean();
     if (!flight) throw new NotFoundException('Flight not found');
-    return flight;
+    // FLT-17: airline, airports, local times, duration and each cabin with price, seats and baggage.
+    const [airline, airports] = await Promise.all([
+      this.airlineModel
+        .findOne({ $or: [{ _id: flight.airlineId }, { moderatorId: flight.airlineId }] })
+        .select('name code logoUrl baggagePolicy cancellationTiers')
+        .lean(),
+      this.airportModel
+        .find({ iataCode: { $in: [flight.departureAirport, flight.arrivalAirport] } })
+        .lean(),
+    ]);
+    const airport = (code: string) => airports.find((a) => a.iataCode === code);
+    const dep = airport(flight.departureAirport);
+    const arr = airport(flight.arrivalAirport);
+    const local = (at: Date, zone?: string) =>
+      zone ? moment.tz(at, zone).format('YYYY-MM-DDTHH:mm') : undefined;
+    return {
+      ...flight,
+      airlineId: undefined,
+      airline: airline
+        ? {
+            id: String(airline._id),
+            name: airline.name,
+            code: airline.code,
+            logoUrl: airline.logoUrl,
+            baggagePolicy: airline.baggagePolicy,
+            cancellationTiers: airline.cancellationTiers,
+          }
+        : undefined,
+      departure: {
+        airport: flight.departureAirport,
+        name: dep?.name,
+        city: dep?.city,
+        timeZone: dep?.timeZone,
+        localTime: local(flight.departureTimeUtc, dep?.timeZone),
+      },
+      arrival: {
+        airport: flight.arrivalAirport,
+        name: arr?.name,
+        city: arr?.city,
+        timeZone: arr?.timeZone,
+        localTime: local(flight.arrivalTimeUtc, arr?.timeZone),
+      },
+      durationMinutes: Math.round(
+        (flight.arrivalTimeUtc.getTime() - flight.departureTimeUtc.getTime()) / 60000,
+      ),
+      cabinDetails: Object.entries(flight.cabins ?? {}).map(([cabinClass, cabin]) => ({
+        cabinClass,
+        price: cabin.price,
+        seatsRemaining: cabin.seatCount,
+        freeBags: cabin.freeBags ?? null,
+        maxBagWeightKg: cabin.maxBagWeightKg ?? null,
+      })),
+    };
   }
 
   // FLT-29, FLT-30: Automatic status transitions & airport locking rules

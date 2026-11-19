@@ -1,8 +1,9 @@
-import { Delete, Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
+import { Delete, Query, Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Public, Roles } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
 import { ObjectIdPipe } from '../common/http';
+import { PageDto } from '../common/dto';
 import { CreateRoomDto, SetRoomStatusDto, UpdateRoomDto } from './room.dto';
 import { ReplaceRoomRangesDto } from './room-availability.dto';
 import { RoomsService } from './rooms.service';
@@ -27,8 +28,8 @@ export class RoomsController {
   @Get()
   @Public()
   @ApiOperation({ summary: 'List active physical rooms in an active hotel' })
-  listPublic(@Param('hotelId', ObjectIdPipe) hotelId: string) {
-    return this.rooms.listPublic(hotelId);
+  listPublic(@Param('hotelId', ObjectIdPipe) hotelId: string, @Query() query: PageDto) {
+    return this.rooms.listPublic(hotelId, query.page);
   }
 
   @Get('manage')
@@ -37,8 +38,9 @@ export class RoomsController {
   listForModerator(
     @CurrentUser() actor: Principal,
     @Param('hotelId', ObjectIdPipe) hotelId: string,
+    @Query() query: PageDto,
   ) {
-    return this.rooms.listForModerator(hotelId, actor);
+    return this.rooms.listForModerator(hotelId, actor, query.page);
   }
 
   @Get(':roomId')

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
-import { Principal, UserRole } from '../common/domain';
+import { AccountStatus, Principal, UserRole } from '../common/domain';
 import { City, Country } from '../reference-data/reference.schema';
 import { User } from '../users/user.schema';
 import {
@@ -72,18 +72,30 @@ export class ItinerariesService {
     return itinerary.save();
   }
 
-  async listUserItineraries(actor: Principal) {
-    const itineraries = await this.itineraryModel
-      .find({ userId: new Types.ObjectId(actor.id) })
-      .sort({ createdAt: -1 })
-      .lean();
+  /** ITN-03: most recently updated first; GEN-05: 10 per page. */
+  async listUserItineraries(actor: Principal, page = 1) {
+    const filter = { userId: new Types.ObjectId(actor.id) };
+    const [itineraries, total] = await Promise.all([
+      this.itineraryModel
+        .find(filter)
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip((page - 1) * 10)
+        .limit(10)
+        .lean(),
+      this.itineraryModel.countDocuments(filter),
+    ]);
 
-    return itineraries.map((itn) => ({
-      ...itn,
-      id: itn._id.toString(),
-      totalDays: itn.days?.length ?? 0,
-      cityGroups: groupConsecutiveDays(itn.days as ItineraryDay[]),
-    }));
+    return {
+      items: itineraries.map((itn) => ({
+        ...itn,
+        id: itn._id.toString(),
+        totalDays: itn.days?.length ?? 0,
+        cityGroups: groupConsecutiveDays(itn.days as ItineraryDay[]),
+      })),
+      total,
+      page,
+      limit: 10,
+    };
   }
 
   async getItineraryById(actor: Principal | null, id: string) {
@@ -96,8 +108,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check (administrator-hidden itineraries behave like private ones)
-    if (!itinerary.isPublic || itinerary.hidden) {
+    // Visibility check (administrator-hidden itineraries and those of deactivated owners behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden || (await this.ownerDeactivated(itinerary.userId))) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this private itinerary');
       }
@@ -694,8 +706,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check (administrator-hidden itineraries behave like private ones)
-    if (!itinerary.isPublic || itinerary.hidden) {
+    // Visibility check (administrator-hidden itineraries and those of deactivated owners behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden || (await this.ownerDeactivated(itinerary.userId))) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this budget summary');
       }
@@ -817,7 +829,12 @@ export class ItinerariesService {
   // -------------------------------------------------------------
 
   async searchPublic(dto: PublicItinerarySearchDto) {
-    const filter: FilterQuery<Itinerary> = { isPublic: true, hidden: { $ne: true } };
+    const filter: FilterQuery<Itinerary> = {
+      isPublic: true,
+      hidden: { $ne: true },
+      // ACC-12: public itineraries of deactivated accounts are hidden.
+      userId: { $nin: await this.deactivatedUserIds() },
+    };
 
     if (dto.q?.trim()) {
       // Match the keyword literally: user input must never be interpreted as a regex pattern.
@@ -889,7 +906,7 @@ export class ItinerariesService {
     }
 
     const itinerary = await this.itineraryModel
-      .findOne({ _id: id, isPublic: true, hidden: { $ne: true } })
+      .findOne({ _id: id, isPublic: true, hidden: { $ne: true }, userId: { $nin: await this.deactivatedUserIds() } })
       .lean();
     if (!itinerary) {
       throw new NotFoundException('Public itinerary not found');
@@ -912,7 +929,7 @@ export class ItinerariesService {
       throw new NotFoundException('Source itinerary not found');
     }
 
-    if (!source.isPublic || source.hidden) {
+    if (!source.isPublic || source.hidden || (await this.ownerDeactivated(source.userId))) {
       throw new ForbiddenException('Only public itineraries can be cloned');
     }
 
@@ -1048,6 +1065,15 @@ export class ItinerariesService {
         },
       })),
     };
+  }
+
+  /** ACC-12: ids of deactivated accounts, whose public itineraries are hidden. */
+  private async deactivatedUserIds() {
+    return this.userModel.find({ status: AccountStatus.DEACTIVATED }).distinct('_id');
+  }
+
+  private async ownerDeactivated(userId: Types.ObjectId) {
+    return Boolean(await this.userModel.exists({ _id: userId, status: AccountStatus.DEACTIVATED }));
   }
 
   /** The reference city's display name (hotels store city names). */

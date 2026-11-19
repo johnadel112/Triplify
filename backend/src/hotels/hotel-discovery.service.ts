@@ -181,7 +181,10 @@ export class HotelDiscoveryService {
         currency: PLATFORM_CURRENCY,
       }];
     });
-    matches.sort((a, b) => a.stayTotal - b.stayTotal || a.name.localeCompare(b.name));
+    matches.sort((a, b) =>
+      query.sortBy === 'rating'
+        ? (b.averageRating ?? 0) - (a.averageRating ?? 0) || a.stayTotal - b.stayTotal || a.name.localeCompare(b.name)
+        : a.stayTotal - b.stayTotal || a.name.localeCompare(b.name));
     const start = (query.page - 1) * PAGE_SIZE;
     return {
       items: matches.slice(start, start + PAGE_SIZE),

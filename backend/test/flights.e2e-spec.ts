@@ -697,4 +697,52 @@ describe('Flights API validation (FLT-01, FLT-03, FLT-04, FLT-05, FLT-11)', () =
       await get(`/itineraries/${itnId}/flights?origin=cai`).set('Cookie', traveler.cookies).expect(400);
     });
   });
+
+  describe('Audit gaps 2: FLT-11 passenger types, GEN-05 search pages, FLT-17 details', () => {
+    it('FLT-11: seats are needed for adults and children; infants travel on a lap', async () => {
+      const mod = await moderator();
+      await post('/flights', mod.cookies).send(validFlight()).expect(201); // economy has 2 seats
+      const base = `/flights/search?origin=CAI&destination=JFK&date=${validFlight().departureTimeLocal.slice(0, 10)}`;
+      const ok = await get(`${base}&adults=1&children=1&infants=1`).expect(200);
+      expect(ok.body).toMatchObject({ seatsNeeded: 2 });
+      expect(ok.body.outbound).toHaveLength(1);
+      expect((await get(`${base}&adults=2&children=1`).expect(200)).body.outbound).toHaveLength(0);
+      await get(`${base}&adults=1&infants=2`).expect(400);
+      await get(`${base}&children=1`).expect(400);
+    });
+
+    it('GEN-05: flight search returns 10 results per page with totals', async () => {
+      const mod = await moderator();
+      for (let i = 0; i < 12; i += 1) {
+        await post('/flights', mod.cookies).send({ ...validFlight(), flightNumber: `MS${700 + i}` }).expect(201);
+      }
+      const date = validFlight().departureTimeLocal.slice(0, 10);
+      const first = await get(`/flights/search?origin=CAI&destination=JFK&date=${date}`).expect(200);
+      expect(first.body).toMatchObject({ page: 1, pageSize: 10, outboundTotal: 12 });
+      expect(first.body.outbound).toHaveLength(10);
+      const second = await get(`/flights/search?origin=CAI&destination=JFK&date=${date}&page=2`).expect(200);
+      expect(second.body.outbound).toHaveLength(2);
+    });
+
+    it('FLT-17: details show airline, local times, duration and each cabin with seats and baggage', async () => {
+      const mod = await moderator();
+      const created = await post('/flights', mod.cookies).send(validFlight()).expect(201);
+      const details = await get(`/flights/${created.body._id as string}`).expect(200);
+      expect(details.body).toMatchObject({
+        flightNumber: 'MS777',
+        airline: { name: 'Fixture Air' },
+        departure: { airport: 'CAI', localTime: validFlight().departureTimeLocal, timeZone: 'Africa/Cairo' },
+        arrival: { airport: 'JFK', localTime: validFlight().arrivalTimeLocal, timeZone: 'America/New_York' },
+      });
+      // 10:30 Cairo (UTC+2) -> 18:45 New York (UTC-5) is 15h15m.
+      expect(details.body.durationMinutes).toBe(15 * 60 + 15);
+      expect(details.body.cabinDetails).toEqual(
+        expect.arrayContaining([
+          { cabinClass: 'economy', price: 320, seatsRemaining: 2, freeBags: 1, maxBagWeightKg: 23 },
+          { cabinClass: 'business', price: 900, seatsRemaining: 1, freeBags: 2, maxBagWeightKg: 32 },
+        ]),
+      );
+      expect(JSON.stringify(details.body)).not.toContain('moderatorId');
+    });
+  });
 });

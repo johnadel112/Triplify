@@ -18,6 +18,7 @@ export class BlogService {
   async listComments(postId: string, page = 1) {
     const post = await this.postModel.exists({
       _id: new Types.ObjectId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     });
     if (!post) throw new NotFoundException('Published post not found');
     const filter = { postId: new Types.ObjectId(postId), hidden: { $ne: true }, deletedAt: { $exists: false } };
@@ -52,6 +53,7 @@ export class BlogService {
     }
     const post = await this.postModel.exists({
       _id: new Types.ObjectId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     });
     if (!post) throw new NotFoundException('Published post not found');
     return this.commentModel.create({
@@ -83,10 +85,16 @@ export class BlogService {
   }
 
   // BLG-06: Toggle like ensuring each user can like a post only once
+  /** ACC-12: posts of deactivated accounts are hidden, so they cannot be read, liked or commented on. */
+  private async deactivatedUserIds() {
+    return this.userModel.find({ status: AccountStatus.DEACTIVATED }).distinct('_id');
+  }
+
   async toggleLike(postId: string, userId: string) {
     // Only published, visible posts can be liked (same rule as comments).
     const post = await this.postModel.exists({
       _id: new Types.ObjectId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     });
     if (!post) throw new NotFoundException('Published post not found');
     const filter = { postId: new Types.ObjectId(postId), userId: new Types.ObjectId(userId) };

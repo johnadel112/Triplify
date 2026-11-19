@@ -382,7 +382,7 @@ export class FlightBookingsService {
   }
 
   // ---------- FLT-29: bookings and passengers of one flight, for its airline moderator ----------
-  async bookingsForFlight(flightId: string, airlineIds: string[]) {
+  async bookingsForFlight(flightId: string, airlineIds: string[], page?: number) {
     const flight = await this.ownedFlight(flightId, airlineIds);
     const rows = await this.bookings
       .find({ 'legs.flightId': flight._id, status: { $in: ['CONFIRMED', 'CANCELLED'] } })
@@ -399,7 +399,9 @@ export class FlightBookingsService {
         ),
       },
       total: rows.length,
-      bookings: rows.map((b) => ({
+      page: page ?? null,
+      // GEN-05: 10 bookings per page when a page is requested (the CSV export always has everyone).
+      bookings: (page ? rows.slice((page - 1) * 10, page * 10) : rows).map((b) => ({
         reference: b.reference,
         status: b.status,
         cabinClass: b.legs.find((l) => String(l.flightId) === String(flight._id))?.cabinClass,

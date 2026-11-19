@@ -390,4 +390,46 @@ describe('Hotel bookings with the real hotels module (HTL-03..22 x HTL-16..21)',
       await get(`/itineraries/${itnId}/hotels?cityGroupIndex=0`, stranger.cookies).expect(403);
     });
   });
+
+  describe('Audit gaps 2: GEN-05 room pages, HTL-12 sort, ITN-03 order', () => {
+    it('GEN-05: room lists are paginated 10 per page', async () => {
+      const { hotelId, moderator } = await setUpHotel();
+      for (let i = 0; i < 10; i += 1) {
+        await post(`/hotels/${hotelId}/rooms`, moderator.cookies)
+          .send({ name: `Extra ${i}`, number: `2${String(i).padStart(2, '0')}`, type: 'Single', beds: 1, maxOccupancy: 1, pricePerNight: 80 })
+          .expect(201);
+      }
+      const first = await get(`/hotels/${hotelId}/rooms/manage`, moderator.cookies).expect(200);
+      expect(first.body).toMatchObject({ total: 12, page: 1, limit: 10 });
+      expect(first.body.items).toHaveLength(10);
+      expect((await get(`/hotels/${hotelId}/rooms/manage?page=2`, moderator.cookies).expect(200)).body.items).toHaveLength(2);
+      expect((await get(`/hotels/${hotelId}/rooms?page=2`).expect(200)).body.items).toHaveLength(2);
+    });
+
+    it('HTL-12: hotel search sorts by price or by rating', async () => {
+      await setUpHotel();
+      const stay = `city=Cairo&checkInDate=${day(10)}&checkOutDate=${day(12)}&guests=1`;
+      await get(`/hotels/search?${stay}&sortBy=rating`).expect(200);
+      await get(`/hotels/search?${stay}&sortBy=price`).expect(200);
+      await get(`/hotels/search?${stay}&sortBy=stars`).expect(400);
+    });
+
+    it('ITN-03: my itineraries, most recently updated first, 10 per page', async () => {
+      const traveler = await account();
+      const ids: string[] = [];
+      for (let i = 0; i < 11; i += 1) {
+        const created = await post('/itineraries', traveler.cookies)
+          .send({ title: `Trip ${i}`, countries: ['EG'], startDate: day(10) })
+          .expect(201);
+        ids.push(String(created.body._id ?? created.body.id));
+      }
+      // Editing the first one makes it the most recently updated.
+      await patch(`/itineraries/${ids[0]}`, traveler.cookies).send({ title: 'Edited trip' }).expect(200);
+      const first = await get('/itineraries', traveler.cookies).expect(200);
+      expect(first.body).toMatchObject({ total: 11, page: 1, limit: 10 });
+      expect(first.body.items).toHaveLength(10);
+      expect(first.body.items[0].title).toBe('Edited trip');
+      expect((await get('/itineraries?page=2', traveler.cookies).expect(200)).body.items).toHaveLength(1);
+    });
+  });
 });

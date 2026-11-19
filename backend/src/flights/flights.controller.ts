@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query, Header, HttpCode } fr
 import { ApiOperation } from '@nestjs/swagger';
 import { FlightsService } from './flights.service';
 import { FlightBookingsService } from '../flight-bookings/flight-bookings.service';
-import { ConfirmationDto } from '../common/dto';
+import { ConfirmationDto, PageDto } from '../common/dto';
 import { Roles, CurrentUser, Public } from '../auth/guards';
 import { Principal, UserRole } from '../common/domain';
 import { ObjectIdPipe } from '../common/http';
@@ -52,8 +52,12 @@ export class FlightsController {
     summary:
       'FLT-29: Bookings (reference, passengers, cabin, seats, status) and seats remaining for my flight',
   })
-  async bookings(@CurrentUser() user: Principal, @Param('id', ObjectIdPipe) id: string) {
-    return this.flightBookings.bookingsForFlight(id, this.airlineIds(user));
+  async bookings(
+    @CurrentUser() user: Principal,
+    @Param('id', ObjectIdPipe) id: string,
+    @Query() query: PageDto,
+  ) {
+    return this.flightBookings.bookingsForFlight(id, this.airlineIds(user), query.page);
   }
 
   @Get(':id/passengers/export')

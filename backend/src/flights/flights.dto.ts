@@ -301,6 +301,39 @@ export class SearchFlightsQuery {
   @Max(9)
   passengers = 1;
 
+  /** FLT-11: passenger types; when adults is given, seats needed = adults + children (infants sit on a lap). */
+  @ApiPropertyOptional({ minimum: 1, maximum: 9, description: 'Adults (overrides passengers)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(9)
+  adults?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 8, default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(8)
+  children?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 9, default: 0, description: 'At most one infant per adult' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(9)
+  infants?: number;
+
+  /** GEN-05: 10 results per page for each direction. */
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
   @ApiPropertyOptional({ minimum: 0, description: 'FLT-15: inclusive minimum price' })
   @IsOptional()
   @Type(() => Number)
