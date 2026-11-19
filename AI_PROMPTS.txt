@@ -237,3 +237,14 @@ Prompt (excerpt):
 How the output was used:
 Confirmed Windows Wi-Fi already uses Google DNS and resolves the Atlas SRV record; isolated the failure to the execution environment's injected localhost Node resolver, so no system-wide network setting was changed. Authenticated to Atlas with TLS intact, verified ping, sessions and an aborted read-only transaction, then started Nest against a process-only `triplify` override with booking sweep disabled. Initialized 25 schema collections/indexes and ran the official reference seed twice. Added the user-supplied FRA/Germany/Frankfurt row and regression coverage; verified API totals of 8 countries, 8 cities, 8 airports and 2 currencies. No attractions dataset exists in the repository, so none was fabricated. Lint/build, 111 unit tests and 90 e2e tests passed; e2e used disposable local replica sets, not Atlas. The user must still add `/triplify` to the ignored saved URI.
 ================================================
+
+================================================
+Date: 2026-11-19
+Contributor: Codex, at repository user's request
+Tool: OpenAI Codex
+Related Requirement: Milestone 1, MongoDB Atlas, PAY-01, PAY-03, Stripe test-mode integration
+Prompt (excerpt):
+"Let's add the Stripe implementation"; verify the configured Stripe test credentials without exposing them; diagnose and correct Node.js Atlas SRV/TXT resolution; connect to Atlas; verify NestJS, Swagger and the signed payment webhook.
+How the output was used:
+Added Stripe CLI login/listen/test-event commands and documented the test-mode workflow. Startup validation now rejects live or publishable Stripe keys and malformed webhook secrets. Verified the configured test key using a read-only Stripe API request (`livemode=false`) and accepted a locally signed, unknown PaymentIntent webhook without creating a payment or changing a booking. Diagnosed Windows SharedAccess forcing Node through a refusing localhost DNS proxy and the active network blocking Atlas TXT queries. Added validated optional DNS and TLS-protected standard multi-host Atlas fallbacks used by the application, seed context and migration script; credentials remain in the ignored URI and are never logged. Changed only the active Wi-Fi DNS servers to Cloudflare/Google with user approval. After the user allowlisted the current IP, Atlas ping succeeded against `triplify`, NestJS started, health and Swagger passed, and reference counts were verified read-only. Final validation: lint/build pass, 115 unit tests and 90 isolated e2e tests pass. No live charge/refund, destructive database test, frontend development or credential commit was performed.
+================================================

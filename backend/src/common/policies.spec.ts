@@ -65,4 +65,44 @@ describe('Startup validation', () => {
     ).toThrow());
   it('rejects wildcard origins', () =>
     expect(() => validateEnvironment({ ...env, FRONTEND_URL: '*' })).toThrow());
+  it('accepts explicit MongoDB DNS server IPs and rejects hostnames', () => {
+    expect(
+      validateEnvironment({ ...env, MONGODB_DNS_SERVERS: '1.1.1.1, 8.8.8.8' })
+        .MONGODB_DNS_SERVERS,
+    ).toBe('1.1.1.1,8.8.8.8');
+    expect(() =>
+      validateEnvironment({ ...env, MONGODB_DNS_SERVERS: 'dns.example.com' }),
+    ).toThrow('comma-separated IP addresses');
+  });
+  it('validates paired MongoDB direct-host fallback settings', () => {
+    const direct = {
+      ...env,
+      MONGODB_URI: 'mongodb+srv://user:password@cluster.example.net/triplify',
+      MONGODB_DIRECT_HOSTS: 'node-0.example.net:27017,node-1.example.net:27017',
+      MONGODB_REPLICA_SET: 'atlas-test-shard-0',
+    };
+    expect(validateEnvironment(direct).MONGODB_REPLICA_SET).toBe('atlas-test-shard-0');
+    expect(() => validateEnvironment({ ...direct, MONGODB_REPLICA_SET: '' })).toThrow(
+      'configured together',
+    );
+  });
+  it('accepts paired Stripe test credentials', () =>
+    expect(
+      validateEnvironment({
+        ...env,
+        STRIPE_SECRET_KEY: 'sk_test_unit_fixture',
+        STRIPE_WEBHOOK_SECRET: 'whsec_unit_fixture',
+      }).STRIPE_SECRET_KEY,
+    ).toBe('sk_test_unit_fixture'));
+  it('rejects live, publishable, or malformed Stripe configuration', () => {
+    expect(() =>
+      validateEnvironment({ ...env, STRIPE_SECRET_KEY: 'sk_live_do_not_use' }),
+    ).toThrow('test-mode');
+    expect(() =>
+      validateEnvironment({ ...env, STRIPE_SECRET_KEY: 'pk_test_not_a_secret' }),
+    ).toThrow('test-mode');
+    expect(() =>
+      validateEnvironment({ ...env, STRIPE_WEBHOOK_SECRET: 'not_a_webhook_secret' }),
+    ).toThrow('webhook signing secret');
+  });
 });

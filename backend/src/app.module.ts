@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { validateEnvironment } from './config/environment';
+import { buildMongoConnectionUri, configureMongoDns } from './config/mongodb-dns';
 
 import { DatabaseModule } from './database/database.module';
 import { IntegrationsModule } from './integrations/integrations.module';
@@ -58,11 +59,18 @@ class HealthController {
 
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        uri: config.getOrThrow<string>('MONGODB_URI'),
-        autoIndex: true,
-        serverSelectionTimeoutMS: 10000,
-      }),
+      useFactory: (config: ConfigService) => {
+        configureMongoDns(config.get<string>('MONGODB_DNS_SERVERS'));
+        return {
+          uri: buildMongoConnectionUri(
+            config.getOrThrow<string>('MONGODB_URI'),
+            config.get<string>('MONGODB_DIRECT_HOSTS'),
+            config.get<string>('MONGODB_REPLICA_SET'),
+          ),
+          autoIndex: true,
+          serverSelectionTimeoutMS: 10000,
+        };
+      },
     }),
 
     DatabaseModule,
