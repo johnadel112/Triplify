@@ -1,5 +1,22 @@
 # Finalization status
 
+## Bonus implementation update (2026-11-20)
+
+All eight user-selected optional bonus groups are implemented as backend APIs on
+`feature/bonus-requirements`, integrated with the newer `origin/main` at `5343a1a`.
+The user explicitly authorized committing and merging this work into `main`;
+the older authorization notes below describe earlier tasks only.
+
+Validation on the combined code: build and lint passed; 18 unit suites / 121 tests
+and 8 end-to-end suites / 138 tests passed, including 18 new bonus integration tests.
+Swagger now covers 162 operations. Tests use disposable MongoDB replica sets and
+captured SMTP delivery. Existing ts-jest module warnings and a non-failing server
+listener warning remain. No live email delivery or cloud deployment was performed.
+
+See [bonus API and setup guide](../backend/docs/BONUS.md) for feature scope, SMTP
+configuration, same-fare flight-change constraints and PDF export limitations.
+The frontend remains on its separate branch. Historical status follows.
+
 Audit date: 2026-11-19. Working branch: `fix/project-finalization`, based on
 `b03565a` (`origin/feature/john-auth-admin`). The local Milestone 1 backend gate is
 complete. Live Atlas connectivity and transactions are verified; the saved Atlas URI still

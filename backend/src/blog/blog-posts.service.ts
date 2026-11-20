@@ -109,7 +109,7 @@ export class BlogPostsService {
       return {
         id: post._id.toString(),
         title: post.title,
-        itinerary: itinerary && String(itinerary.userId) === String(post.authorId)
+        itinerary: itinerary && author && author.status !== AccountStatus.DEACTIVATED && String(itinerary.userId) === String(post.authorId)
           ? { id: String(itinerary._id), title: itinerary.title } : null,
         ...(includeBody ? { body: post.body } : {}),
         excerpt: excerpt(post.body),
@@ -160,6 +160,7 @@ export class BlogPostsService {
     const where: FilterQuery<BlogPost> = {
       status: BlogPostStatus.PUBLISHED,
       hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     };
     if (query.tag) where.tags = normalizeTags([query.tag])[0];
     const q = query.q?.trim();
@@ -212,6 +213,7 @@ export class BlogPostsService {
   async getPublished(postId: string) {
     const row = await this.posts.findOne({
       _id: this.validId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     }).lean();
     if (!row) throw new NotFoundException('Published post not found');
     const [view] = await this.present([row as unknown as Row], true);
@@ -318,12 +320,18 @@ export class BlogPostsService {
     return { removed: true, imageId };
   }
 
+  /** ACC-12: posts of deactivated accounts are hidden from public pages. */
+  private async deactivatedUserIds() {
+    return this.users.find({ status: AccountStatus.DEACTIVATED }).distinct('_id');
+  }
+
   /** Media from drafts remains private. No arbitrary files or paths can be requested. */
   async publishedImage(filename: string): Promise<string> {
     if (!FILE_NAME.test(filename)) throw new NotFoundException('Image not found');
     const exists = await this.posts.exists({
       status: BlogPostStatus.PUBLISHED,
       hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
       'images.filename': filename,
     });
     if (!exists) throw new NotFoundException('Image not found');

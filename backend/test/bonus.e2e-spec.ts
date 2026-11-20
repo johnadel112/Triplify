@@ -34,12 +34,13 @@ describe('Bonus APIs on disposable MongoDB; SMTP delivery captured locally', () 
     send: jest.fn<Promise<void>, [MailMessage, string]>().mockResolvedValue(undefined),
   };
   const model = <T>(name: string): Model<T> => db.model<T>(name);
-  const write = (method: 'post' | 'put' | 'patch' | 'delete', path: string, auth = cookies) =>
-    request(app.getHttpServer())
-      [method](`/api${path}`)
+  const write = (method: 'post' | 'put' | 'patch' | 'delete', path: string, auth = cookies) => {
+    const server = request(app.getHttpServer());
+    return server[method](`/api${path}`)
       .set('Origin', 'http://localhost:5173')
       .set('X-Triplify-CSRF', '1')
       .set('Cookie', auth);
+  };
   const get = (path: string, auth = cookies) =>
     request(app.getHttpServer()).get(`/api${path}`).set('Cookie', auth);
   async function account(role = UserRole.USER, providerId?: string) {
@@ -541,6 +542,61 @@ describe('Bonus APIs on disposable MongoDB; SMTP delivery captured locally', () 
         type: NotificationType.FLIGHT_SCHEDULE_CHANGED,
       }),
     ).toBe(1);
+  });
+  it('preserves paid extra bags and baggage terms when changing flights', async () => {
+    const { flight, makeFlight } = await flightFixture();
+    await model<AirlineProfile>(AirlineProfile.name).updateOne(
+      { _id: flight.airlineId },
+      { $set: { baggagePolicy: { extraBagPrice: 10, maxExtraBagsPerPassenger: 2 } } },
+    );
+    const service = app.get(FlightBookingsService);
+    const draft = await service.createDraft(owner, {
+      legs: [{ flightId: flight.id, cabinClass: 'economy' }],
+      passengers: [
+        {
+          firstName: 'Ada',
+          lastName: 'Test',
+          dateOfBirth: '1990-01-01',
+          passportNumber: 'TEST123',
+          type: 'adult',
+          extraBags: 1,
+        },
+      ],
+    });
+    await service.hold(owner, String(draft._id));
+    await model<FlightBooking>(FlightBooking.name).updateOne(
+      { _id: draft._id },
+      { $set: { status: 'CONFIRMED' }, $unset: { holdExpiresAt: 1 } },
+    );
+    const next = await makeFlight(11);
+    const changed = await write('patch', `/flight-bookings/${draft._id}/change`)
+      .send({ legs: [{ flightId: next.id, cabinClass: 'economy' }] })
+      .expect(200);
+    expect(changed.body.totalPrice).toBe(110);
+    expect(changed.body.legs[0].baggageCost).toBe(10);
+    expect(changed.body.baggagePolicy.legs[0].flightId).toBe(next.id);
+    await model<AirlineProfile>(AirlineProfile.name).updateOne(
+      { _id: flight.airlineId },
+      { $set: { 'baggagePolicy.extraBagPrice': 15 } },
+    );
+    await write('patch', `/flight-bookings/${draft._id}/change`)
+      .send({ legs: [{ flightId: flight.id, cabinClass: 'economy' }] })
+      .expect(409);
+  });
+  it('releases selected seats when the provider cancels a held flight', async () => {
+    const { flight } = await flightFixture();
+    const id = await booking(flight.id, owner, false);
+    await write('put', `/flight-bookings/${id}/seats`)
+      .send({ legIndex: 0, seats: ['1A'] })
+      .expect(200);
+    await app
+      .get(FlightBookingsService)
+      .cancelFlightByProvider(flight.id, [String(flight.airlineId)]);
+    expect(
+      (await model<Flight>(Flight.name).findById(flight._id).select('+seatAssignments'))!
+        .seatAssignments,
+    ).toHaveLength(0);
+    expect((await model<FlightBooking>(FlightBooking.name).findById(id))!.status).toBe('EXPIRED');
   });
   it('rolls back flight changes when fare or availability fails and denies other owners', async () => {
     const { flight, makeFlight } = await flightFixture();

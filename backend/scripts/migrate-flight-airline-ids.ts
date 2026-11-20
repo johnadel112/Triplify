@@ -20,7 +20,8 @@ async function main() {
   const profiles = await airlines.find().select('_id moderatorId name').lean();
   const changes: Array<{ airline: string; moderatorId: string; flights: number }> = [];
   for (const profile of profiles) {
-    if (profile._id.equals(profile.moderatorId)) continue;
+    // Airlines created by an admin may not have a moderator yet: nothing to migrate.
+    if (!profile.moderatorId || profile._id.equals(profile.moderatorId)) continue;
     const filter = { airlineId: profile.moderatorId };
     const count = await flights.countDocuments(filter);
     if (!count) continue;

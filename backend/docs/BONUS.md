@@ -36,7 +36,8 @@ notification emails. Existing persisted in-app notifications are the durable sou
 for email delivery, including booking confirmations, cancellations, refunds and
 flight-change notifications. Only verified accounts with notifications enabled are
 queued, and preferences are checked again before sending a queued notification.
-Administrative events still use the existing notification integration.
+Administrative events enter through the existing notification dispatcher and then
+follow the same email queue, including account and provider status changes.
 
 The worker runs every minute, processing at most 100 source notifications and 100
 mail jobs per run. Queue keys deduplicate notification jobs. Atomic two-minute leases
@@ -59,10 +60,10 @@ update can cause a duplicate; stable Message-ID assists recipient-side deduplica
   distinct seat. Only active holds and upcoming confirmed bookings can select seats.
 - Seat selection is free and optional. Inventory and seat assignments are separate;
   selection does not reserve an extra seat. Transactions serialize competing requests.
-  Cancellation, expiry and flight changes release assignments. E-tickets include seats.
+  Traveler/provider cancellation, expiry and flight changes release assignments. E-tickets include seats.
 - `PATCH /flight-bookings/:id/change` takes `legs` with `flightId` and `cabinClass`.
   Changes are limited to upcoming confirmed bookings, preserving leg count, airline,
-  route, cabin and the exact fare including baggage. A different fare requires a new
+  route, cabin, purchased baggage terms and the exact fare including baggage. A different fare requires a new
   booking. Original payment totals and cancellation policy remain unchanged. Old seat
   choices are cleared; travelers select seats on the replacement flights.
 - Replacement inventory, booking updates and the change notification commit together.
@@ -119,3 +120,7 @@ claimed by these tests. Use the existing lint/build/unit/e2e commands for the fu
 
 Library references: [Nodemailer SMTP](https://nodemailer.com/smtp) and
 [PDFKit documents](https://pdfkit.org/docs/getting_started.html).
+
+Verified on 2026-11-20 after integrating `origin/main` at `5343a1a`: build/lint passed,
+121 unit tests and 138 end-to-end tests passed (including 18 bonus tests). Swagger
+covers 162 operations. The dependency installation audit reported no vulnerabilities.

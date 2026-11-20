@@ -62,7 +62,7 @@ export class CreateHotelDto {
   @ApiPropertyOptional({ type: [String], example: ['https://example.com/hotel.jpg'] })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(5)
   @ArrayUnique()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true }, { each: true })
   images?: string[];

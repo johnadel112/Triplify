@@ -46,6 +46,14 @@ export class FlightExtrasService {
         throw new ConflictException('Seat maps cannot change after seats have been held or booked');
       if (dto.seats.length !== flight.cabins[dto.cabinClass]?.seatCount)
         throw new BadRequestException('Seat map must match cabin capacity');
+      if (
+        Object.entries(flight.seatMaps ?? {}).some(
+          ([cabin, seats]) =>
+            cabin !== dto.cabinClass && seats.some((seat) => dto.seats.includes(seat)),
+        )
+      ) {
+        throw new BadRequestException('Seat labels must be unique across cabins');
+      }
       flight.seatMaps = { ...flight.seatMaps, [dto.cabinClass]: dto.seats };
       flight.markModified('seatMaps');
       await flight.save({ session });
@@ -145,6 +153,7 @@ export class FlightExtrasService {
       if (!active.modifiedCount) throw new ConflictException('Account is not active');
       const newLegs: BookingLeg[] = [];
       const bagKg = booking.passengers.reduce((sum, p) => sum + p.extraBaggageKg, 0);
+      const extraBags = booking.passengers.reduce((sum, p) => sum + (p.extraBags ?? 0), 0);
       // Return old inventory within the same transaction; every failure rolls this back.
       for (const leg of booking.legs) {
         await this.flights.updateOne(
@@ -180,7 +189,29 @@ export class FlightExtrasService {
           choice.cabinClass !== old.cabinClass
         )
           throw new BadRequestException('Changes must keep airline, route and cabin');
-        const baggageCost = Math.round(bagKg * next.extraBaggagePricePerKg * 100) / 100;
+        const bagRule = provider.baggagePolicy;
+        if (
+          extraBags &&
+          (!bagRule ||
+            booking.passengers.some((p) => (p.extraBags ?? 0) > bagRule.maxExtraBagsPerPassenger) ||
+            bagRule.extraBagPrice !== booking.baggagePolicy?.extraBagPrice)
+        ) {
+          throw new ConflictException('Replacement must preserve the purchased extra-bag terms');
+        }
+        const purchasedAllowance = booking.baggagePolicy?.legs[index];
+        if (
+          purchasedAllowance &&
+          (purchasedAllowance.freeBags !== cabin.freeBags ||
+            purchasedAllowance.maxBagWeightKg !== cabin.maxBagWeightKg)
+        ) {
+          throw new ConflictException(
+            'Replacement must preserve the purchased cabin baggage allowance',
+          );
+        }
+        const baggageCost =
+          Math.round(
+            (bagKg * next.extraBaggagePricePerKg + extraBags * (bagRule?.extraBagPrice ?? 0)) * 100,
+          ) / 100;
         const total = Math.round((cabin.price * booking.seatCount + baggageCost) * 100) / 100;
         if (Math.round(total * 100) !== Math.round(old.legTotal * 100))
           throw new ConflictException(
@@ -220,6 +251,13 @@ export class FlightExtrasService {
       booking.legs = newLegs;
       booking.firstDeparture = newLegs[0].departureTime;
       booking.lastDeparture = newLegs[newLegs.length - 1].departureTime;
+      if (booking.baggagePolicy) {
+        booking.baggagePolicy.legs = booking.baggagePolicy.legs.map((leg, index) => ({
+          ...leg,
+          flightId: String(newLegs[index].flightId),
+        }));
+        booking.markModified('baggagePolicy');
+      }
       // Preserve the purchased cancellation policy and amount; no additional payment is collected.
       await booking.save({ session });
       await this.notifications.create(

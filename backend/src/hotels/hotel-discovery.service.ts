@@ -124,6 +124,9 @@ export class HotelDiscoveryService {
     if (!query.city?.trim() && !query.country?.trim()) {
       throw new BadRequestException('Specify a city or country');
     }
+    if (query.minPrice !== undefined && query.maxPrice !== undefined && query.minPrice > query.maxPrice) {
+      throw new BadRequestException('minPrice cannot be greater than maxPrice');
+    }
     if (query.guests < query.rooms) {
       throw new BadRequestException('Guest count must be at least the number of requested rooms');
     }
@@ -150,6 +153,7 @@ export class HotelDiscoveryService {
       if (!chosen) return [];
       const priceOfCheapestQualifyingRoom = Math.min(...chosen.map((r) => r.pricePerNight));
       if (query.maxPrice !== undefined && priceOfCheapestQualifyingRoom > query.maxPrice) return [];
+      if (query.minPrice !== undefined && priceOfCheapestQualifyingRoom < query.minPrice) return [];
       const rating = ratings.get(id);
       if (query.minRating !== undefined && (rating?.averageRating ?? 0) < query.minRating) return [];
       const nightlyCents = chosen.reduce((sum, room) => sum + Math.round(room.pricePerNight * 100), 0);
@@ -177,7 +181,10 @@ export class HotelDiscoveryService {
         currency: PLATFORM_CURRENCY,
       }];
     });
-    matches.sort((a, b) => a.stayTotal - b.stayTotal || a.name.localeCompare(b.name));
+    matches.sort((a, b) =>
+      query.sortBy === 'rating'
+        ? (b.averageRating ?? 0) - (a.averageRating ?? 0) || a.stayTotal - b.stayTotal || a.name.localeCompare(b.name)
+        : a.stayTotal - b.stayTotal || a.name.localeCompare(b.name));
     const start = (query.page - 1) * PAGE_SIZE;
     return {
       items: matches.slice(start, start + PAGE_SIZE),

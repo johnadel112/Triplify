@@ -1,28 +1,25 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
+  Res,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { ApiConsumes, ApiCookieAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { CurrentUser, Roles } from '../auth/guards';
+import { ApiBody, ApiConsumes, ApiCookieAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { memoryStorage } from 'multer';
+import { MAX_IMAGE_BYTES } from '../blog/blog-posts.utils';
+import { CurrentUser, Public, Roles } from '../auth/guards';
+import { ObjectIdPipe } from '../common/http';
 import { Principal, UserRole } from '../common/domain';
 import { UpdateActivityDto } from './itineraries.dto';
 import { ItinerariesService } from './itineraries.service';
-
-const uploadDir = join(process.cwd(), 'uploads', 'activities');
-if (!existsSync(uploadDir)) {
-  mkdirSync(uploadDir, { recursive: true });
-}
 
 @ApiTags('Activities')
 @ApiCookieAuth()
@@ -52,45 +49,43 @@ export class ActivitiesController {
     return this.itinerariesService.deleteActivity(actor, id);
   }
 
+  @Get('media/:filename')
+  @Public()
+  @ApiOperation({ summary: 'GEN-08: Serve an activity image of a public itinerary' })
+  async media(@Param('filename') filename: string, @Res() res: Response) {
+    this.send(res, await this.itinerariesService.activityImagePath(filename));
+  }
+
+  @Get('my-media/:filename')
+  @Roles(UserRole.USER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'GEN-08: Serve an activity image of my own (or, for admins, any) itinerary' })
+  async myMedia(@CurrentUser() actor: Principal, @Param('filename') filename: string, @Res() res: Response) {
+    this.send(res, await this.itinerariesService.activityImagePath(filename, actor));
+  }
+
+  private send(res: Response, path: string) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.sendFile(path, (error) => {
+      if (error && !res.headersSent) res.status(404).json({ statusCode: 404, message: 'Image not found' });
+    });
+  }
+
   @Post(':id/images')
   @Roles(UserRole.USER, UserRole.ADMIN)
   @ApiOperation({
-    summary: 'ITN-12, GEN-08: Upload activity image(s) with mime-type and size validation',
+    summary: 'ITN-12, GEN-08: Upload up to 5 JPG/PNG images (max 5 MB each) to my activity',
   })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(
-    FilesInterceptor('images', 5, {
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
-          cb(null, uploadDir);
-        },
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          const ext = extname(file.originalname).toLowerCase();
-          cb(null, `activity-${uniqueSuffix}${ext}`);
-        },
-      }),
-      limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit
-      },
-      fileFilter: (_req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-        if (!allowed.includes(file.mimetype)) {
-          return cb(
-            new BadRequestException(
-              `Invalid file type: ${file.mimetype}. Allowed: JPEG, PNG, WebP.`,
-            ),
-            false,
-          );
-        }
-        cb(null, true);
-      },
-    }),
-  )
+  @ApiBody({ schema: { type: 'object', properties: {
+    images: { type: 'array', items: { type: 'string', format: 'binary' } },
+  } } })
+  @UseInterceptors(FilesInterceptor('images', 5, {
+    storage: memoryStorage(),
+    limits: { fileSize: MAX_IMAGE_BYTES, files: 5 },
+  }))
   uploadImages(
     @CurrentUser() actor: Principal,
-    @Param('id') id: string,
+    @Param('id', ObjectIdPipe) id: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     return this.itinerariesService.uploadActivityImages(actor, id, files || []);

@@ -19,7 +19,7 @@ export interface MailMessage {
 export class MailTransport {
   constructor(private config: ConfigService) {}
   async send(message: MailMessage, id: string): Promise<void> {
-    // Test mode never contacts a server; tests replace this provider to inspect delivery.
+    // Disabled mode never contacts a server; tests replace this provider to inspect delivery.
     if (this.config.get('MAIL_MODE', 'disabled') !== 'smtp') throw new Error('SMTP disabled');
     const transport = nodemailer.createTransport({
       host: this.config.getOrThrow<string>('SMTP_HOST'),

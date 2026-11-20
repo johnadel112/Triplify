@@ -81,10 +81,19 @@ export class RoomsService {
     }
   }
 
-  async listPublic(hotelId: string) {
+  /** GEN-05: room lists are paginated 10 per page. */
+  private async roomPage(filter: Record<string, unknown>, page: number) {
+    const [items, total] = await Promise.all([
+      this.rooms.find(filter).select(PUBLIC_ROOM_FIELDS).sort({ numberKey: 1 })
+        .skip((page - 1) * 10).limit(10).lean(),
+      this.rooms.countDocuments(filter),
+    ]);
+    return { items, total, page, limit: 10 };
+  }
+
+  async listPublic(hotelId: string, page = 1) {
     await this.requireHotel(hotelId);
-    return this.rooms.find({ hotelId, active: true })
-      .select(PUBLIC_ROOM_FIELDS).sort({ numberKey: 1 }).lean();
+    return this.roomPage({ hotelId, active: true }, page);
   }
 
   async getPublic(hotelId: string, roomId: string) {
@@ -95,11 +104,10 @@ export class RoomsService {
     return room;
   }
 
-  async listForModerator(hotelId: string, actor: Principal) {
+  async listForModerator(hotelId: string, actor: Principal, page = 1) {
     this.assertModerator(actor, hotelId);
     await this.requireHotel(hotelId, false);
-    return this.rooms.find({ hotelId }).select(PUBLIC_ROOM_FIELDS)
-      .sort({ numberKey: 1 }).lean();
+    return this.roomPage({ hotelId }, page);
   }
 
   async getForModerator(hotelId: string, roomId: string, actor: Principal) {
@@ -156,6 +164,23 @@ export class RoomsService {
     ).select(PUBLIC_ROOM_FIELDS).lean();
     if (!updated) throw new NotFoundException('Room not found');
     return updated;
+  }
+
+  /** HTL-06: delete a room unless a Pending or Confirmed reservation uses it. Past reservations keep their room snapshot. */
+  async remove(hotelId: string, roomId: string, actor: Principal) {
+    this.assertModerator(actor, hotelId);
+    await this.requireHotel(hotelId, false);
+    const room = await this.requireRoom(hotelId, roomId);
+    const reserved = await this.bookings.exists({
+      providerId: new Types.ObjectId(hotelId),
+      'rooms.roomId': room._id,
+      status: { $in: PROTECTED_BOOKING_STATUSES },
+    });
+    if (reserved) {
+      throw new ConflictException('Cannot delete a room with pending or confirmed reservations');
+    }
+    await this.rooms.deleteOne({ _id: room._id, hotelId });
+    return { deleted: true, roomId };
   }
 
   /** HTL-04: Replace a room's future availability ranges; no overlaps allowed. */

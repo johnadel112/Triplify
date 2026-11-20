@@ -16,7 +16,8 @@
     "stripe:trigger:failure": "stripe trigger payment_intent.payment_failed",
     "seed:admin": "ts-node scripts/seed-admin.ts",
     "seed:reference": "ts-node scripts/seed-reference.ts",
-    "migrate:flight-airlines": "ts-node scripts/migrate-flight-airline-ids.ts"
+    "migrate:flight-airlines": "ts-node scripts/migrate-flight-airline-ids.ts",
+    "migrate:airline-moderator-index": "ts-node scripts/migrate-airline-moderator-index.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

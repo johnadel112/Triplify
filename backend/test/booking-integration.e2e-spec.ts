@@ -24,6 +24,7 @@ import { signedEvent, webhookTestSecret } from './stripe-test-signature';
 import { RefundsService } from '../src/payments/refunds.service';
 import { Hotel } from '../src/hotels/hotel.schema';
 import { AdminService } from '../src/admin/admin.service';
+import { NotificationsService } from '../src/notifications/notifications.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -165,7 +166,7 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     // Booking and provider integration adapters are real in this suite.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication({ rawBody: true });
@@ -395,6 +396,33 @@ describe('Booking integration: account deactivation and admin bookings (ACC-12, 
     await patch(`/admin/providers/hotels/${hotel._id}/verify`, admin.cookies).expect(200);
     await patch(`/admin/providers/hotels/${hotel._id}/reactivate`, admin.cookies).expect(200);
     expect((await hotels.findById(hotel._id))?.toObject()).toMatchObject({ verified: true, active: true });
+  });
+
+  it('GEN-01, ACC-15, ACC-16: admin actions notify the affected people exactly once', async () => {
+    const admin = await account(UserRole.ADMIN);
+    const traveler = await account();
+    const hotel = await hotels.create({ name: 'Notify Hotel', description: 'A hotel', city: 'Cairo',
+      country: 'Egypt', address: '1 Nile St', starClass: 4, timeZone: 'Africa/Cairo', active: true, verified: true });
+    const moderator = await users.create({
+      name: 'Hotel Mod', email: `${new Types.ObjectId().toString()}@example.com`, passwordHash,
+      role: UserRole.HOTEL_MODERATOR, providerId: hotel._id, providerType: 'HOTEL',
+    });
+    const booking = await hotelBooking(traveler.user._id, HotelBookingStatus.CONFIRMED, 10);
+    await hotelBookings.updateOne({ _id: booking._id }, { $set: { providerId: hotel._id } });
+    const notes = app.get<Model<Notification>>(getModelToken(Notification.name));
+    const sender = app.get(NotificationsService);
+
+    await patch(`/admin/providers/hotels/${hotel._id}/deactivate`, admin.cookies).expect(200);
+    expect(await sender.dispatchPending()).toBe(1);
+    expect(await notes.countDocuments({ userId: moderator._id, type: 'PROVIDER_STATUS_CHANGED' })).toBe(1);
+    const travelerNote = await notes.findOne({ userId: traveler.user._id, type: 'PROVIDER_STATUS_CHANGED' }).lean();
+    expect(travelerNote?.message).toContain('remains valid');
+    expect(await sender.dispatchPending()).toBe(0);
+    expect(await notes.countDocuments({ type: 'PROVIDER_STATUS_CHANGED' })).toBe(2);
+
+    await patch(`/admin/users/${traveler.user._id}/suspend`, admin.cookies).expect(200);
+    expect(await sender.dispatchPending()).toBe(1);
+    expect(await notes.countDocuments({ userId: traveler.user._id, type: 'ACCOUNT_STATUS_CHANGED' })).toBe(1);
   });
 
   it('ACC-12: overlapping deactivation and confirmation cannot both commit', async () => {

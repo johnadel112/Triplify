@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import PDFDocument from 'pdfkit';
-import { Principal } from '../common/domain';
+import { AccountStatus, Principal } from '../common/domain';
 import { Itinerary } from '../itineraries/itineraries.schema';
 import { FlightBooking } from '../flight-bookings/flight-booking.schema';
 import { HotelBooking } from '../hotel-bookings/hotel-booking.schema';
@@ -173,13 +173,19 @@ export class BonusService {
     if (type === 'ITINERARY') {
       const item = await this.itineraries
         .findOne({ _id: targetId, isPublic: true, hidden: { $ne: true } })
-        .select('title');
-      return item ? { id: targetId, title: item.title } : null;
+        .select('title userId');
+      const author =
+        item &&
+        (await this.users.exists({ _id: item.userId, status: { $ne: AccountStatus.DEACTIVATED } }));
+      return item && author ? { id: targetId, title: item.title } : null;
     }
     const item = await this.posts
       .findOne({ _id: targetId, status: BlogPostStatus.PUBLISHED, hidden: { $ne: true } })
-      .select('title');
-    return item ? { id: targetId, title: item.title } : null;
+      .select('title authorId');
+    const author =
+      item &&
+      (await this.users.exists({ _id: item.authorId, status: { $ne: AccountStatus.DEACTIVATED } }));
+    return item && author ? { id: targetId, title: item.title } : null;
   }
   async favourite(actor: Principal, dto: FavouriteDto) {
     if (!(await this.favouriteTarget(dto.type, dto.targetId)))

@@ -148,7 +148,7 @@ describe('Hotel bookings & reviews (HTL-16..24, GEN-11) on a real MongoDB replic
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
     process.env.STRIPE_WEBHOOK_SECRET = webhookTestSecret;
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CLOCK)
       .useValue({ now: () => new Date(now) })

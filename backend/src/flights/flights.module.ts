@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { FlightsController } from './flights.controller';
+import { AirlinesController } from './airlines.controller';
 import { FlightsService } from './flights.service';
 import { Flight, FlightSchema, AirlineProfile, AirlineProfileSchema } from './flights.schema';
 import { Airport, AirportSchema } from '../reference-data/reference.schema';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { AccountsModule } from '../auth/accounts.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FlightBookingsModule } from '../flight-bookings/flight-bookings.module';
 
 @Module({
   imports: [
@@ -18,8 +20,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
     IntegrationsModule,
     AccountsModule,
     NotificationsModule,
+    FlightBookingsModule,
   ],
-  controllers: [FlightsController],
+  controllers: [FlightsController, AirlinesController],
   providers: [FlightsService],
   exports: [FlightsService],
 })

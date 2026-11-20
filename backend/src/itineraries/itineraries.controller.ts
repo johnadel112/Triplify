@@ -26,18 +26,30 @@ import {
   CreateDayBudgetDto,
   CreateItineraryDto,
   CreateTransportCostDto,
+  ItineraryFlightsQuery,
+  ItineraryHotelsQuery,
   PublicItinerarySearchDto,
   ReorderDaysDto,
   UpdateDayDto,
   UpdateItineraryDto,
 } from './itineraries.dto';
 import { ItinerariesService } from './itineraries.service';
+import { HotelDiscoveryService } from '../hotels/hotel-discovery.service';
+import { HotelSearchQuery } from '../hotels/hotel-discovery.dto';
+import { FlightsService } from '../flights/flights.service';
+import { SearchFlightsQuery } from '../flights/flights.dto';
+import { ObjectIdPipe } from '../common/http';
+import { PageDto } from '../common/dto';
 
 @ApiTags('Itineraries')
 @ApiCookieAuth()
 @Controller('itineraries')
 export class ItinerariesController {
-  constructor(private readonly itinerariesService: ItinerariesService) {}
+  constructor(
+    private readonly itinerariesService: ItinerariesService,
+    private readonly hotelDiscovery: HotelDiscoveryService,
+    private readonly flights: FlightsService,
+  ) {}
 
   // --------------------------------------------------------------------------
   // ITN-20, ITN-21: Public Itinerary Endpoints (Must be declared before :id)
@@ -78,10 +90,10 @@ export class ItinerariesController {
 
   @Get()
   @Roles(UserRole.USER, UserRole.ADMIN)
-  @ApiOperation({ summary: 'ITN-03: List all itineraries created by the authenticated user' })
+  @ApiOperation({ summary: 'ITN-03: My itineraries, most recently updated first (10 per page)' })
   @ApiOkResponse({ description: 'List of user itineraries' })
-  listMine(@CurrentUser() actor: Principal) {
-    return this.itinerariesService.listUserItineraries(actor);
+  listMine(@CurrentUser() actor: Principal, @Query() query: PageDto) {
+    return this.itinerariesService.listUserItineraries(actor, query.page);
   }
 
   @Get(':id')
@@ -252,7 +264,7 @@ export class ItinerariesController {
   })
   getBudgetSummary(
     @CurrentUser() actor: Principal,
-    @Param('id') id: string,
+    @Param('id', ObjectIdPipe) id: string,
     @Query() query: BudgetSummaryQueryDto,
   ) {
     return this.itinerariesService.getBudgetSummary(actor, id, query.currency);
@@ -264,16 +276,30 @@ export class ItinerariesController {
 
   @Get(':id/hotels')
   @ApiOperation({
-    summary: 'ITN-25: Reuse hotel search parameters for consecutive city groups in this itinerary',
+    summary:
+      'ITN-25: City groups of this itinerary; with cityGroupIndex, the hotels available for that group (check-in = first day, check-out = day after the last)',
   })
-  @ApiOkResponse({ description: 'Hotel search queries grouped by consecutive stay dates' })
-  getHotelSearch(
+  @ApiOkResponse({ description: 'City groups, and the matching hotel search results for the chosen group' })
+  async getHotelSearch(
     @CurrentUser() actor: Principal,
-    @Param('id') id: string,
-    @Query('cityGroupIndex') cityGroupIndex?: string,
+    @Param('id', ObjectIdPipe) id: string,
+    @Query() query: ItineraryHotelsQuery,
   ) {
-    const idx = cityGroupIndex !== undefined ? parseInt(cityGroupIndex, 10) : undefined;
-    return this.itinerariesService.getHotelSearchParameters(actor, id, idx);
+    const params = await this.itinerariesService.getHotelSearchParameters(actor, id, query.cityGroupIndex);
+    if (query.cityGroupIndex === undefined || !('selectedGroup' in params) || !params.selectedGroup) {
+      return params;
+    }
+    const group = params.selectedGroup;
+    const hotels = await this.hotelDiscovery.search(
+      Object.assign(new HotelSearchQuery(), {
+        city: await this.itinerariesService.cityName(group.cityCode),
+        checkInDate: group.checkInDate,
+        checkOutDate: group.checkOutDate,
+        guests: query.guests,
+        rooms: query.rooms,
+      }),
+    );
+    return { ...params, hotels };
   }
 
   // --------------------------------------------------------------------------
@@ -283,12 +309,47 @@ export class ItinerariesController {
   @Get(':id/flights')
   @ApiOperation({
     summary:
-      'ITN-26: Reuse flight search parameters for itinerary start, return, and intercity hops',
+      'ITN-26: Suggested flight searches; with origin, one-way or round-trip flights to any airport in the first day\'s city',
   })
   @ApiOkResponse({
-    description: 'Flight search parameters mapped to itinerary dates and destinations',
+    description: 'Suggested searches, and the flight results when an origin airport is given',
   })
-  getFlightSearch(@CurrentUser() actor: Principal, @Param('id') id: string) {
-    return this.itinerariesService.getFlightSearchParameters(actor, id);
+  async getFlightSearch(
+    @CurrentUser() actor: Principal,
+    @Param('id', ObjectIdPipe) id: string,
+    @Query() query: ItineraryFlightsQuery,
+  ) {
+    const params = await this.itinerariesService.getFlightSearchParameters(actor, id);
+    if (!query.origin || !('startDate' in params) || !params.searches.length) return params;
+    const cityCode = params.searches[0].destinationCity ?? '';
+    const destinations = (await this.flights.airportCodesInCity(cityCode)).filter((code) => code !== query.origin);
+    const roundTrip = query.roundTrip === 'true';
+    const date = query.date ?? params.startDate;
+    const returnDate = roundTrip
+      ? query.returnDate ?? new Date(Date.parse(`${params.endDate}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+      : undefined;
+    const outbound = [];
+    const inbound = [];
+    for (const destination of destinations) {
+      const result = await this.flights.searchFlights(
+        Object.assign(new SearchFlightsQuery(), {
+          origin: query.origin,
+          destination,
+          date,
+          returnDate,
+          cabinClass: query.cabinClass ?? 'economy',
+          passengers: query.passengers,
+          sortBy: 'departureTime',
+        }),
+      );
+      outbound.push(...result.outbound);
+      inbound.push(...(result.return ?? []));
+    }
+    return {
+      ...params,
+      flightSearch: { origin: query.origin, destinations, date, returnDate, roundTrip },
+      outbound,
+      return: roundTrip ? inbound : undefined,
+    };
   }
 }
