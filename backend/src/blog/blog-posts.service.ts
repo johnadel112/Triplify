@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
-import { mkdir, unlink, writeFile } from 'fs/promises';
+import { storeImages, removeImage } from '../common/media';
 import { join } from 'path';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { AccountStatus, Principal, UserRole } from '../common/domain';
@@ -262,7 +262,7 @@ export class BlogPostsService {
       this.likes.deleteMany({ postId }),
     ]);
     await Promise.all(files.map((file) =>
-      unlink(join(MEDIA_DIR, file)).catch(() => undefined),
+      removeImage('blog-posts', file),
     ));
   }
 
@@ -274,7 +274,7 @@ export class BlogPostsService {
       throw new BadRequestException('A post can have at most five images');
     }
     const prepared = files.map((file) => {
-      if (!file.buffer?.length || file.size > MAX_IMAGE_BYTES) {
+      if (!file.buffer?.length || file.size > MAX_IMAGE_BYTES || file.buffer.length > MAX_IMAGE_BYTES) {
         throw new BadRequestException('Every image must be <= 5 MB');
       }
       const kind = imageKind(file.buffer);
@@ -292,18 +292,12 @@ export class BlogPostsService {
         data: file.buffer,
       };
     });
-    await mkdir(MEDIA_DIR, { recursive: true });
-    const written: string[] = [];
+    const rollback = await storeImages('blog-posts', prepared.map(img => ({ filename: img.metadata.filename, data: img.data })));
     try {
-      for (const img of prepared) {
-        const fullPath = join(MEDIA_DIR, img.metadata.filename);
-        await writeFile(fullPath, img.data, { flag: 'wx' });
-        written.push(fullPath);
-      }
       post.images.push(...prepared.map((img) => img.metadata));
       await post.save();
     } catch (error) {
-      await Promise.all(written.map((path) => unlink(path).catch(() => undefined)));
+      await rollback();
       throw error;
     }
     const [view] = await this.present([post.toObject() as unknown as Row], true, true);
@@ -316,7 +310,7 @@ export class BlogPostsService {
     if (!image) throw new NotFoundException('Image not found on this post');
     post.images = post.images.filter((entry) => entry.id !== imageId);
     await post.save();
-    await unlink(join(MEDIA_DIR, image.filename)).catch(() => undefined);
+    await removeImage('blog-posts', image.filename);
     return { removed: true, imageId };
   }
 

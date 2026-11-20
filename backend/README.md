@@ -1,6 +1,8 @@
 # Triplify backend
 
-NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Optional bonus APIs now include email verification, SMTP notifications, email recovery and analytics; see [BONUS.md](docs/BONUS.md).
+NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Optional bonus APIs now include email verification, SMTP/HTTPS notifications, email recovery and analytics; see [BONUS.md](docs/BONUS.md).
+
+For Render Free with Cloudinary image storage and Resend email, see [deployment instructions](docs/DEPLOYMENT.md).
 
 ## Run locally
 

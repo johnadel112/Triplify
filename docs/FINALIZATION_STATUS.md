@@ -1,5 +1,20 @@
 # Finalization status
 
+## Free cloud preparation (2026-11-20)
+
+Added authenticated Cloudinary image storage for hotels, airlines, blogs and
+activities, preserving API URLs and visibility checks. Added Resend HTTPS email
+delivery through the existing encrypted queue. Local storage and SMTP/disabled
+email remain supported. Configuration and free-tier limitations are documented in
+[the deployment guide](../backend/docs/DEPLOYMENT.md).
+
+Validation: build and lint passed; 21 unit suites / 137 tests and 8 end-to-end
+suites / 140 tests passed. Coverage includes signed uploads, rollback, bounded
+downloads, private image access, Resend delivery failures and queued verification.
+Provider HTTP calls are mocked. Live provider accounts, inbox delivery and cloud
+deployment remain unverified. Existing local images require migration or re-upload
+before switching storage. The frontend remains separate.
+
 ## Bonus implementation update (2026-11-20)
 
 All eight user-selected optional bonus groups are implemented as backend APIs on

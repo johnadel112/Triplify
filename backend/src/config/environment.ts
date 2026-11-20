@@ -36,7 +36,20 @@ export function validateEnvironment(env: Record<string, unknown>) {
     throw new Error('Production origins must use HTTPS');
   const port = Number(env.PORT ?? 3000);
   const mailMode = String(env.MAIL_MODE ?? 'disabled');
-  if (!['disabled', 'smtp'].includes(mailMode)) throw new Error('MAIL_MODE must be disabled or smtp');
+  if (!['disabled', 'smtp', 'resend'].includes(mailMode)) throw new Error('MAIL_MODE must be disabled, smtp or resend');
+  if (mailMode === 'resend') {
+    for (const name of ['RESEND_API_KEY', 'MAIL_FROM']) {
+      if (!String(env[name] ?? '').trim()) throw new Error(`${name} is required for Resend`);
+    }
+  }
+  const storage = String(env.MEDIA_STORAGE ?? 'local');
+  if (!['local', 'cloudinary'].includes(storage)) throw new Error('Invalid MEDIA_STORAGE');
+  if (storage === 'cloudinary') {
+    for (const name of ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']) {
+      if (!String(env[name] ?? '').trim()) throw new Error(`${name} is required for Cloudinary`);
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(String(env.CLOUDINARY_CLOUD_NAME))) throw new Error('Invalid CLOUDINARY_CLOUD_NAME');
+  }
   if (mailMode === 'smtp') {
     for (const name of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'MAIL_FROM']) {
       if (!String(env[name] ?? '').trim()) throw new Error(`${name} is required for SMTP`);
@@ -58,6 +71,7 @@ export function validateEnvironment(env: Record<string, unknown>) {
     ...env,
     NODE_ENV: mode,
     MAIL_MODE: mailMode,
+    MEDIA_STORAGE: storage,
     PORT: port,
     MONGODB_URI: uri,
     MONGODB_DNS_SERVERS: mongoDnsServers.join(','),

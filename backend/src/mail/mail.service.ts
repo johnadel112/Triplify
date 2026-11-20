@@ -20,7 +20,30 @@ export class MailTransport {
   constructor(private config: ConfigService) {}
   async send(message: MailMessage, id: string): Promise<void> {
     // Disabled mode never contacts a server; tests replace this provider to inspect delivery.
-    if (this.config.get('MAIL_MODE', 'disabled') !== 'smtp') throw new Error('SMTP disabled');
+    const mode = this.config.get('MAIL_MODE', 'disabled');
+    if (mode === 'resend') {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.config.getOrThrow<string>('RESEND_API_KEY')}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `triplify-${id}`,
+          },
+          body: JSON.stringify({ ...message, from: this.config.getOrThrow<string>('MAIL_FROM') }),
+          signal: AbortSignal.timeout(20000),
+          redirect: 'error',
+        });
+        if (!response.ok) throw new Error('Delivery failed');
+        const result = await response.json() as { id?: string };
+        if (!result.id) throw new Error('Delivery failed');
+        return;
+      } catch {
+        // Provider responses may contain addresses or credentials. Keep them out of logs.
+        throw new Error('Email provider delivery failed');
+      }
+    }
+    if (mode !== 'smtp') throw new Error('Email delivery disabled');
     const transport = nodemailer.createTransport({
       host: this.config.getOrThrow<string>('SMTP_HOST'),
       port: Number(this.config.get('SMTP_PORT', 587)),
@@ -87,7 +110,7 @@ export class MailService {
   }
   @Cron(CronExpression.EVERY_MINUTE)
   async process() {
-    if (this.config.get('MAIL_MODE', 'disabled') !== 'smtp') return;
+    if (!['smtp', 'resend'].includes(this.config.get('MAIL_MODE', 'disabled'))) return;
     // Notifications themselves are the durable source, including those written inside booking transactions.
     const pending = await this.notifications
       .find({ emailQueued: { $ne: true } })

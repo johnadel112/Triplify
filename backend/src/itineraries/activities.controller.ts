@@ -1,3 +1,4 @@
+import { sendStoredImage } from '../common/media';
 import {
   Body,
   Controller,
@@ -53,21 +54,18 @@ export class ActivitiesController {
   @Public()
   @ApiOperation({ summary: 'GEN-08: Serve an activity image of a public itinerary' })
   async media(@Param('filename') filename: string, @Res() res: Response) {
-    this.send(res, await this.itinerariesService.activityImagePath(filename));
+    return this.send(res, await this.itinerariesService.activityImagePath(filename));
   }
 
   @Get('my-media/:filename')
   @Roles(UserRole.USER, UserRole.ADMIN)
   @ApiOperation({ summary: 'GEN-08: Serve an activity image of my own (or, for admins, any) itinerary' })
   async myMedia(@CurrentUser() actor: Principal, @Param('filename') filename: string, @Res() res: Response) {
-    this.send(res, await this.itinerariesService.activityImagePath(filename, actor));
+    return this.send(res, await this.itinerariesService.activityImagePath(filename, actor));
   }
 
   private send(res: Response, path: string) {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.sendFile(path, (error) => {
-      if (error && !res.headersSent) res.status(404).json({ statusCode: 404, message: 'Image not found' });
-    });
+    return sendStoredImage(res, path);
   }
 
   @Post(':id/images')

@@ -27,6 +27,13 @@ existing trusted Origin and `X-Triplify-CSRF: 1` requirement.
 
 ## Email notifications
 
+For hosts that block SMTP, set `MAIL_MODE=resend`, `RESEND_API_KEY`, and
+`MAIL_FROM` to send through Resend's HTTPS API. The same encrypted queue, leases,
+preferences, and retry rules apply. Each job supplies a stable provider idempotency
+key (Resend retains keys for 24 hours). Provider errors never persist recipient
+details or credentials. A successful API response means provider acceptance, not
+confirmed inbox delivery. See [free deployment setup](DEPLOYMENT.md) for sender restrictions.
+
 Set `MAIL_MODE=smtp`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`,
 `SMTP_PORT`, and `SMTP_SECURE` locally. SMTP requires TLS with certificate verification.
 The default `MAIL_MODE=disabled` makes no network calls. No credentials are committed.

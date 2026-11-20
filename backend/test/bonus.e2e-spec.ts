@@ -182,15 +182,15 @@ describe('Bonus APIs on disposable MongoDB; SMTP delivery captured locally', () 
     await app?.close();
     await mongo?.stop();
   });
-  async function emailedToken() {
-    app.get(ConfigService).set('MAIL_MODE', 'smtp');
+  async function emailedToken(mode = 'smtp') {
+    app.get(ConfigService).set('MAIL_MODE', mode);
     await app.get(MailService).process();
     const text = transport.send.mock.calls.at(-1)?.[0].text;
     expect(text).toBeDefined();
     return /#token=([A-Za-z0-9_-]+)/.exec(text!)![1];
   }
 
-  it('registers, queues an encrypted verification message, and consumes its token once', async () => {
+  it.each(['smtp', 'resend'])('registers, queues an encrypted verification message with %s, and consumes its token once', async mode => {
     const result = await write('post', '/auth/register', [])
       .send({ name: 'New traveler', email: 'new@example.com', password, consent: true })
       .expect(201);
@@ -198,7 +198,7 @@ describe('Bonus APIs on disposable MongoDB; SMTP delivery captured locally', () 
     const queued = await model<MailJob>(MailJob.name).findOne().select('+payload').lean();
     expect(queued?.payload).not.toContain('new@example.com');
     expect(queued?.payload).not.toContain('token=');
-    const token = await emailedToken();
+    const token = await emailedToken(mode);
     await write('post', '/auth/verify-email', []).send({ token }).expect(200);
     await write('post', '/auth/verify-email', []).send({ token }).expect(400);
     const saved = await model<User>(User.name).findOne({ email: 'new@example.com' }).lean();
@@ -206,6 +206,48 @@ describe('Bonus APIs on disposable MongoDB; SMTP delivery captured locally', () 
     expect(saved).not.toHaveProperty('verificationHash');
     await app.get(MailService).process();
     expect(transport.send).toHaveBeenCalledTimes(1);
+  });
+  it('keeps Cloudinary blog images private until published and revokes access when hidden/deleted', async () => {
+    const previous = { ...process.env };
+    Object.assign(process.env, { MEDIA_STORAGE: 'cloudinary', CLOUDINARY_CLOUD_NAME: 'demo',
+      CLOUDINARY_API_KEY: 'test-key', CLOUDINARY_API_SECRET: 'test-secret' });
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+    const provider = jest.spyOn(global, 'fetch').mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/upload')) {
+        const body = options!.body as FormData;
+        expect(body.get('type')).toBe('authenticated');
+        return new Response(JSON.stringify({ public_id: body.get('public_id') }));
+      }
+      if (String(url).endsWith('/destroy')) return new Response(JSON.stringify({ result: 'ok' }));
+      if (String(url).startsWith('https://res.cloudinary.com/demo/image/authenticated/s--')) return new Response(png);
+      throw new Error('Unexpected provider request');
+    });
+    try {
+      const post = await write('post', '/blog/posts').send({ title: 'Cloud trip', body: 'Private draft' }).expect(201);
+      const endpoint = `/blog/posts/${post.body.id}/images`;
+      await write('post', endpoint, otherCookies).attach('images', png, 'image.png').expect(404);
+      expect(provider).not.toHaveBeenCalled();
+      const upload = await write('post', endpoint).attach('images', png, 'image.png').expect(201);
+      const image = upload.body.images[0];
+      const url = image.url.replace('/api', '');
+      provider.mockClear();
+      await get(url, []).expect(404);
+      expect(provider).not.toHaveBeenCalled();
+      await write('patch', `/blog/posts/${post.body.id}`).send({ status: 'PUBLISHED' }).expect(200);
+      const served = await get(url, []).expect(200);
+      expect(served.headers['cache-control']).toBe('private, no-store');
+      expect(served.body).toEqual(png);
+      await model<BlogPost>(BlogPost.name).updateOne({ _id: post.body.id }, { hidden: true });
+      provider.mockClear();
+      await get(url, []).expect(404);
+      expect(provider).not.toHaveBeenCalled();
+      await write('delete', `${endpoint}/${image.id}`).expect(200);
+      expect(String(provider.mock.calls[0][0])).toMatch(/\/destroy$/);
+      await get(url, []).expect(404);
+    } finally {
+      provider.mockRestore();
+      process.env = previous;
+    }
   });
   it('uses generic recovery responses, rejects invalid tokens and revokes existing sessions after reset', async () => {
     const user = await model<User>(User.name).findById(owner);

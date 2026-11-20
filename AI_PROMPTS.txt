@@ -365,3 +365,13 @@ Clarification: "use the 8 listed feature groups"
 How the output was used:
 Implemented backend email verification/recovery, encrypted retryable SMTP delivery, same-fare flight changes and seat selection, hotel moderator replies, private booking attachments, itinerary PDF export, public itinerary links on blog posts, admin analytics and favourites. Added disposable-database integration tests for authorization, privacy, token replay/expiry, email delivery failures, concurrent seat selection and booking changes, and preserved upstream baggage/provider-cancellation behavior while integrating the latest main. Documented API contracts and SMTP setup in backend/docs/BONUS.md. No cloud deployment or real email delivery was performed.
 ================================================
+================================================
+Date: 2026-11-20
+Tool: OpenAI Codex
+Related Requirement: Free cloud deployment preparation
+Prompt:
+"i want a completely free cloud deployment method"
+"change them"
+How the output was used:
+Added authenticated Cloudinary storage for hotel, airline, blog and activity images while preserving existing API URLs and database access checks. Image responses proxy signed content with no-store caching; batch/database failures roll back uploads. Added Resend HTTPS email delivery using the existing encrypted queue, retry logic and stable idempotency keys. Kept local storage and SMTP/disabled mail for development. Added configuration validation, mocked provider tests, cloud blog privacy integration coverage and Render Free setup instructions. No real provider credentials were read or changed, no cloud deployment was performed and no live provider requests were made by tests.
+================================================

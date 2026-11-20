@@ -1,3 +1,4 @@
+import { sendStoredImage } from '../common/media';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -29,10 +30,7 @@ export class HotelsController {
   @ApiOperation({ summary: 'HTL-01, GEN-08: Serve an uploaded hotel photo' })
   async media(@Param('filename') filename: string, @Res() res: Response) {
     const path = await this.hotelsService.imagePath(filename);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.sendFile(path, (error) => {
-      if (error && !res.headersSent) res.status(404).json({ statusCode: 404, message: 'Image not found' });
-    });
+    return sendStoredImage(res, path);
   }
 
   @Post(':id/images')

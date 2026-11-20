@@ -1,3 +1,4 @@
+import { sendStoredImage } from '../common/media';
 import {
   Body, Controller, Delete, Get, Param, Patch, Post, Query,
   UploadedFiles, UseInterceptors, Res,
@@ -122,11 +123,6 @@ export class BlogMediaController {
   @ApiOperation({ summary: 'BLG-10: Serve an image only if attached to a published post' })
   async media(@Param('filename') filename: string, @Res() res: Response) {
     const path = await this.posts.publishedImage(filename);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.sendFile(path, (error) => {
-      if (error && !res.headersSent) {
-        res.status(404).json({ statusCode: 404, message: 'Image not found' });
-      }
-    });
+    return sendStoredImage(res, path);
   }
 }
