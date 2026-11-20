@@ -4,10 +4,12 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -426,4 +428,46 @@ export class BudgetSummaryQueryDto {
   @IsString()
   @Matches(/^[A-Za-z]{3}$/, { message: 'currency must be a 3-letter currency code' })
   currency?: string;
+}
+
+/** ITN-25: pick a city group and see the hotels available for its dates. */
+export class ItineraryHotelsQuery {
+  @ApiPropertyOptional({ minimum: 0, description: 'City group to search; omit to list the groups only' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0)
+  cityGroupIndex?: number;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 1 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
+  guests = 1;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 10, default: 1 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10)
+  rooms = 1;
+}
+
+/** ITN-26: one-way or round-trip flights from a chosen airport to the first day's city. */
+export class ItineraryFlightsQuery {
+  @ApiPropertyOptional({ example: 'CAI', description: 'Origin airport; omit to list suggested searches only' })
+  @IsOptional() @Matches(/^[A-Z]{3}$/)
+  origin?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-20', description: 'Defaults to the itinerary start date' })
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  date?: string;
+
+  @ApiPropertyOptional({ default: false, description: 'Also search the return trip' })
+  @IsOptional() @Type(() => String) @IsIn(['true', 'false'])
+  roundTrip?: 'true' | 'false';
+
+  @ApiPropertyOptional({ example: '2026-12-27', description: 'Defaults to the day after the last itinerary day' })
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  returnDate?: string;
+
+  @ApiPropertyOptional({ enum: ['economy', 'premiumEconomy', 'business', 'first'], default: 'economy' })
+  @IsOptional() @IsIn(['economy', 'premiumEconomy', 'business', 'first'])
+  cabinClass?: 'economy' | 'premiumEconomy' | 'business' | 'first';
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 9, default: 1 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(9)
+  passengers = 1;
 }

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
-import { Principal, UserRole } from '../common/domain';
+import { AccountStatus, Principal, UserRole } from '../common/domain';
 import { City, Country } from '../reference-data/reference.schema';
 import { User } from '../users/user.schema';
 import {
@@ -38,6 +38,11 @@ import {
   renumberAndRecalculateDays,
 } from './itineraries.schema';
 import { FxRatesService } from './fx-rates.service';
+import { join } from 'path';
+import { MEDIA_FILE_NAME, mediaDir, prepareImages, removeImage, storeImages } from '../common/media';
+
+const ACTIVITY_MEDIA_FOLDER = 'activities';
+const ACTIVITY_MEDIA_PREFIX = '/api/activities/media/';
 
 @Injectable()
 export class ItinerariesService {
@@ -57,6 +62,7 @@ export class ItinerariesService {
     if (!dto.countries || dto.countries.length === 0) {
       throw new BadRequestException('At least one country must be specified');
     }
+    await this.assertKnownCountries(dto.countries);
 
     const itinerary = new this.itineraryModel({
       userId: new Types.ObjectId(actor.id),
@@ -72,18 +78,30 @@ export class ItinerariesService {
     return itinerary.save();
   }
 
-  async listUserItineraries(actor: Principal) {
-    const itineraries = await this.itineraryModel
-      .find({ userId: new Types.ObjectId(actor.id) })
-      .sort({ createdAt: -1 })
-      .lean();
+  /** ITN-03: most recently updated first; GEN-05: 10 per page. */
+  async listUserItineraries(actor: Principal, page = 1) {
+    const filter = { userId: new Types.ObjectId(actor.id) };
+    const [itineraries, total] = await Promise.all([
+      this.itineraryModel
+        .find(filter)
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip((page - 1) * 10)
+        .limit(10)
+        .lean(),
+      this.itineraryModel.countDocuments(filter),
+    ]);
 
-    return itineraries.map((itn) => ({
-      ...itn,
-      id: itn._id.toString(),
-      totalDays: itn.days?.length ?? 0,
-      cityGroups: groupConsecutiveDays(itn.days as ItineraryDay[]),
-    }));
+    return {
+      items: itineraries.map((itn) => ({
+        ...itn,
+        id: itn._id.toString(),
+        totalDays: itn.days?.length ?? 0,
+        cityGroups: groupConsecutiveDays(itn.days as ItineraryDay[]),
+      })),
+      total,
+      page,
+      limit: 10,
+    };
   }
 
   async getItineraryById(actor: Principal | null, id: string) {
@@ -96,8 +114,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check (administrator-hidden itineraries behave like private ones)
-    if (!itinerary.isPublic || itinerary.hidden) {
+    // Visibility check (administrator-hidden itineraries and those of deactivated owners behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden || (await this.ownerDeactivated(itinerary.userId))) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this private itinerary');
       }
@@ -126,6 +144,7 @@ export class ItinerariesService {
     if (dto.title !== undefined) itinerary.title = dto.title.trim();
     if (dto.description !== undefined) itinerary.description = dto.description.trim();
     if (dto.countries !== undefined) {
+      await this.assertKnownCountries(dto.countries);
       if (dto.countries.length === 0) {
         throw new BadRequestException('At least one country must be specified');
       }
@@ -174,11 +193,9 @@ export class ItinerariesService {
     this.assertOwnership(actor, itinerary);
 
     const cityCode = dto.cityCode.trim().toLowerCase();
-    let cityName = dto.cityName?.trim();
-    if (!cityName) {
-      const cityDoc = await this.cityModel.findOne({ code: cityCode });
-      if (cityDoc) cityName = cityDoc.name;
-    }
+    // ITN-05: the city comes from the predefined list shared with hotels and airports.
+    const cityDoc = await this.knownCity(cityCode);
+    const cityName = dto.cityName?.trim() || cityDoc.name;
 
     const newDay: ItineraryDay = {
       _id: new Types.ObjectId(),
@@ -221,13 +238,9 @@ export class ItinerariesService {
 
     if (dto.cityCode !== undefined) {
       const cityCode = dto.cityCode.trim().toLowerCase();
+      const cityDoc = await this.knownCity(cityCode);
       day.cityCode = cityCode;
-      let cityName = dto.cityName?.trim();
-      if (!cityName) {
-        const cityDoc = await this.cityModel.findOne({ code: cityCode });
-        if (cityDoc) cityName = cityDoc.name;
-      }
-      day.cityName = cityName;
+      day.cityName = dto.cityName?.trim() || cityDoc.name;
     }
 
     if (dto.cityName !== undefined && dto.cityCode === undefined) {
@@ -398,11 +411,7 @@ export class ItinerariesService {
     return { success: true, message: 'Activity deleted successfully' };
   }
 
-  async uploadActivityImages(
-    actor: Principal,
-    activityId: string,
-    files: Array<{ filename: string; originalname: string; mimetype: string; size: number }>,
-  ) {
+  async uploadActivityImages(actor: Principal, activityId: string, files: Express.Multer.File[]) {
     if (!Types.ObjectId.isValid(activityId)) {
       throw new BadRequestException('Invalid activity ID');
     }
@@ -436,31 +445,46 @@ export class ItinerariesService {
       throw new BadRequestException('An activity can have at most 5 images');
     }
 
-    for (const file of files) {
-      const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-      if (!allowedMimes.includes(file.mimetype)) {
-        throw new BadRequestException(
-          `Invalid file type: ${file.mimetype}. Allowed: JPEG, PNG, WebP.`,
-        );
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        throw new BadRequestException('Image file size must not exceed 5MB');
-      }
-
+    // GEN-08: real JPG/PNG content (not just the declared type), <= 5 MB, stored under a server-side name.
+    const prepared = prepareImages(files);
+    const rollback = await storeImages(ACTIVITY_MEDIA_FOLDER, prepared);
+    prepared.forEach((image, index) => {
       const img: ActivityImage = {
         _id: new Types.ObjectId(),
-        url: `/uploads/activities/${file.filename}`,
-        filename: file.filename,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
+        url: `${ACTIVITY_MEDIA_PREFIX}${image.filename}`,
+        filename: image.filename,
+        originalName: files[index].originalname.slice(0, 150),
+        mimeType: image.filename.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        size: files[index].size,
         uploadedAt: new Date(),
       };
       targetActivity.images.push(img);
-    }
+    });
 
-    await itinerary.save();
+    try {
+      await itinerary.save();
+    } catch (error) {
+      await rollback();
+      throw error;
+    }
     return targetActivity;
+  }
+
+  /**
+   * GEN-08: an activity image is served publicly while its itinerary is public and visible;
+   * the owner and admins can always see it.
+   */
+  async activityImagePath(filename: string, actor?: Principal) {
+    if (!MEDIA_FILE_NAME.test(filename)) throw new NotFoundException('Image not found');
+    const itinerary = await this.itineraryModel
+      .findOne({ 'days.activities.images.filename': filename })
+      .select('userId isPublic hidden')
+      .lean();
+    if (!itinerary) throw new NotFoundException('Image not found');
+    const visible = itinerary.isPublic && !itinerary.hidden && !(await this.ownerDeactivated(itinerary.userId));
+    const allowed = visible || (actor && (actor.role === UserRole.ADMIN || itinerary.userId.toString() === actor.id));
+    if (!allowed) throw new NotFoundException('Image not found');
+    return join(mediaDir(ACTIVITY_MEDIA_FOLDER), filename);
   }
 
   async deleteActivityImage(actor: Principal, activityId: string, imageId: string) {
@@ -488,14 +512,14 @@ export class ItinerariesService {
       throw new NotFoundException('Activity not found');
     }
 
-    const initialLength = targetActivity.images.length;
-    targetActivity.images = targetActivity.images.filter((img) => img._id.toString() !== imageId);
-
-    if (targetActivity.images.length === initialLength) {
+    const removedImage = targetActivity.images.find((img) => img._id.toString() === imageId);
+    if (!removedImage) {
       throw new NotFoundException('Image not found in activity');
     }
+    targetActivity.images = targetActivity.images.filter((img) => img._id.toString() !== imageId);
 
     await itinerary.save();
+    await removeImage(ACTIVITY_MEDIA_FOLDER, removedImage.filename);
     return { success: true, message: 'Activity image deleted successfully' };
   }
 
@@ -694,8 +718,8 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary not found');
     }
 
-    // Visibility check (administrator-hidden itineraries behave like private ones)
-    if (!itinerary.isPublic || itinerary.hidden) {
+    // Visibility check (administrator-hidden itineraries and those of deactivated owners behave like private ones)
+    if (!itinerary.isPublic || itinerary.hidden || (await this.ownerDeactivated(itinerary.userId))) {
       if (!actor || (itinerary.userId.toString() !== actor.id && actor.role !== UserRole.ADMIN)) {
         throw new ForbiddenException('You do not have permission to view this budget summary');
       }
@@ -817,7 +841,12 @@ export class ItinerariesService {
   // -------------------------------------------------------------
 
   async searchPublic(dto: PublicItinerarySearchDto) {
-    const filter: FilterQuery<Itinerary> = { isPublic: true, hidden: { $ne: true } };
+    const filter: FilterQuery<Itinerary> = {
+      isPublic: true,
+      hidden: { $ne: true },
+      // ACC-12: public itineraries of deactivated accounts are hidden.
+      userId: { $nin: await this.deactivatedUserIds() },
+    };
 
     if (dto.q?.trim()) {
       // Match the keyword literally: user input must never be interpreted as a regex pattern.
@@ -889,7 +918,7 @@ export class ItinerariesService {
     }
 
     const itinerary = await this.itineraryModel
-      .findOne({ _id: id, isPublic: true, hidden: { $ne: true } })
+      .findOne({ _id: id, isPublic: true, hidden: { $ne: true }, userId: { $nin: await this.deactivatedUserIds() } })
       .lean();
     if (!itinerary) {
       throw new NotFoundException('Public itinerary not found');
@@ -912,7 +941,7 @@ export class ItinerariesService {
       throw new NotFoundException('Source itinerary not found');
     }
 
-    if (!source.isPublic || source.hidden) {
+    if (!source.isPublic || source.hidden || (await this.ownerDeactivated(source.userId))) {
       throw new ForbiddenException('Only public itineraries can be cloned');
     }
 
@@ -1048,6 +1077,37 @@ export class ItinerariesService {
         },
       })),
     };
+  }
+
+  /** ITN-01: countries must come from the predefined reference list. */
+  private async assertKnownCountries(countries: string[]) {
+    const codes = [...new Set(countries.map((c) => c.trim().toUpperCase()))];
+    const known = await this.countryModel.countDocuments({ code: { $in: codes } });
+    if (known !== codes.length) {
+      throw new BadRequestException('Countries must be selected from the predefined country list');
+    }
+  }
+
+  /** ITN-05: cities must come from the predefined reference list. */
+  private async knownCity(cityCode: string) {
+    const city = await this.cityModel.findOne({ code: cityCode }).lean();
+    if (!city) throw new BadRequestException('City must be selected from the predefined city list');
+    return city;
+  }
+
+  /** ACC-12: ids of deactivated accounts, whose public itineraries are hidden. */
+  private async deactivatedUserIds() {
+    return this.userModel.find({ status: AccountStatus.DEACTIVATED }).distinct('_id');
+  }
+
+  private async ownerDeactivated(userId: Types.ObjectId) {
+    return Boolean(await this.userModel.exists({ _id: userId, status: AccountStatus.DEACTIVATED }));
+  }
+
+  /** The reference city's display name (hotels store city names). */
+  async cityName(cityCode: string) {
+    const city = await this.cityModel.findOne({ code: cityCode }).lean();
+    return city?.name ?? cityCode;
   }
 
   // -------------------------------------------------------------

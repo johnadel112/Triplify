@@ -10,11 +10,25 @@ export class AirlineProfile extends Document {
   @Prop({ type: String, required: true })
   name!: string;
 
+  /** FLT-01: two-character airline code, unique when set. */
+  @Prop({ type: String })
+  code?: string;
+
   @Prop({ type: String })
   logoUrl?: string;
 
   @Prop({ type: String })
   contactEmail?: string;
+
+  /** FLT-08: price per extra bag and maximum extra bags per passenger. */
+  @Prop({
+    type: { extraBagPrice: Number, maxExtraBagsPerPassenger: Number, _id: false },
+  })
+  baggagePolicy?: { extraBagPrice: number; maxExtraBagsPerPassenger: number };
+
+  /** FLT-09: days-before-departure thresholds with refund percentages. */
+  @Prop({ type: [{ daysBefore: Number, refundPercentage: Number, _id: false }], default: [] })
+  cancellationTiers!: { daysBefore: number; refundPercentage: number }[];
 
   @Prop({ type: Boolean, default: true, index: true })
   verified!: boolean;
@@ -49,9 +63,12 @@ export class Flight extends Document {
   @Prop({ type: String, required: true })
   departureDate!: string; // YYYY-MM-DD
 
-  // { economy: { seatCount, price }, premiumEconomy: {...}, business: {...}, first: {...} }
+  // { economy: { seatCount, price, freeBags, maxBagWeightKg }, premiumEconomy: {...}, ... }
   @Prop({ type: Object, required: true })
-  cabins!: Record<string, { seatCount: number; price: number }>;
+  cabins!: Record<
+    string,
+    { seatCount: number; price: number; freeBags?: number; maxBagWeightKg?: number }
+  >;
 
   @Prop({ type: Number, required: true, default: 0 })
   extraBaggagePricePerKg!: number;
@@ -74,6 +91,10 @@ export class Flight extends Document {
 }
 
 export const AirlineProfileSchema = SchemaFactory.createForClass(AirlineProfile);
+AirlineProfileSchema.index(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: 'string' } }, name: 'code_unique_when_set' },
+);
 // One airline per moderator, enforced only once a moderator is linked. A new index name avoids a
 // startup conflict with the legacy non-partial `moderatorId_1` index; drop that one with
 // `npm run migrate:airline-moderator-index -- --apply`.

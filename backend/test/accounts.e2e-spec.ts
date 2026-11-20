@@ -69,7 +69,7 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CLOCK)
       .useValue({ now: () => new Date(now) })
@@ -492,7 +492,7 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([method, operation]) => ({ path, method, operation })),
     );
-    expect(operations).toHaveLength(128);
+    expect(operations).toHaveLength(141);
     expect(document.paths).toEqual(
       expect.objectContaining({
         '/api/payments/webhook': expect.objectContaining({ post: expect.any(Object) }),

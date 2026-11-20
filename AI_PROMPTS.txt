@@ -293,3 +293,66 @@ John's Milestone 1 list: "Verify that backend/.env selects triplify, and that Ne
 How the output was used:
 Used the guidance to configure backend/.env without committing secrets (credentials typed by the student), verify that the URI selects triplify, check Atlas network access, ping, replica set and transactions, and start NestJS normally against Atlas. Installed a checksum-verified Stripe CLI release, forwarded payment webhooks to localhost and ran a test-mode payment: demo hotel booking -> policies accepted -> PaymentIntent -> Stripe test card -> signed webhook accepted -> booking CONFIRMED and payment SUCCEEDED. Created clearly labelled demo data and an admin in Atlas, and re-ran build, lint, 121 unit and 91 e2e tests on top of the latest main. No live charges or real cards were used.
 ================================================
+Date: 2026-11-19
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: Milestone 1 audit (project section 8, all modules)
+Prompt:
+Perform a complete Milestone 1 backend audit: requirements checklist, API inventory against section 8, database, authentication and authorization for all roles, booking concurrency, payments and refunds, itineraries, blog, admin, validation, Swagger, tests and security. Use an isolated test database, do not touch the frontend and fix confirmed issues.
+How the output was used:
+Compared the 119 section 8 endpoints with the running API and classified each as exact, equivalent, missing or optional. Called every route anonymously and as each of the 4 roles on a disposable in-memory MongoDB: unauthenticated calls return 401, mutations without the CSRF header return 403 and admin/moderator routes reject other roles. Checked that the existing tests cover seat and room-night races, webhook signatures and duplicate refunds, scanned git history for secrets and ran npm audit. Fixed the confirmed gaps in the entries below; all work was committed on audit/milestone1-final (PR #23).
+================================================
+Date: 2026-11-19
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: FLT-06, FLT-29, FLT-30, PAY-03 (PR #23)
+Prompt:
+The audit found that airline moderators cannot cancel a flight or see its bookings, and that search returns cancelled and departed flights. Implement them without changing the existing booking flow.
+How the output was used:
+Added POST /api/flights/:id/cancel (in one transaction: confirmed bookings cancelled with a 100% provider refund, unpaid holds released, seats of other legs returned, every traveler notified; refunds requested after commit), GET /api/flights/:id/bookings and a CSV passenger export for the airline's own moderator. Search now returns only Scheduled flights that have not departed, and only Scheduled flights can be edited. Covered by 3 new e2e tests, including the refund amount and reason.
+================================================
+Date: 2026-11-19
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: FLT-04, FLT-08, FLT-09, FLT-19, PAY-02 (PR #23)
+Prompt:
+The baggage and cancellation model differs from the requirements (price per kg, tiers in hours per flight, no free bag allowance). Make it match FLT-04/08/09 while keeping existing flights and bookings working.
+How the output was used:
+Cabins now carry a free bag allowance and maximum bag weight (required for new flights). Added PUT /api/airlines/:id/baggage-policy and /cancellation-policy for the airline's own moderator, with unique day thresholds. Passengers choose extra bags, priced per bag within the per-passenger maximum; bookings snapshot the terms and the PAY-02 policy view shows them. Older flights fall back to the previous rules. Also made cabin updates merge per cabin instead of replacing the map. Covered by 3 new e2e tests.
+================================================
+Date: 2026-11-19
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: BLG-05, BLG-06, BLG-07, ITN-14, GEN-13, Swagger (PR #23)
+Prompt:
+Sweep every endpoint with empty bodies and malformed ids as each role and fix anything that returns a server error or breaks a rule.
+How the output was used:
+Found and fixed: liking a non-existent or unpublished post succeeded; a malformed id in the itinerary budget summary returned 500; a non-string comment body returned 500 (comments now use a validated DTO). Added Swagger summaries to the 10 operations that had none and checked the requirement ids against the PDF. Re-ran the sweep until no route returned a server error; added e2e tests for each fix.
+================================================
+Date: 2026-11-20
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: FLT-01, FLT-05, FLT-15, FLT-30, GEN-01, GEN-06, GEN-08, HTL-01, HTL-06, HTL-12, ITN-25, ITN-26 (PR #23)
+Prompt:
+"From the project description, if you read it correctly, is anything missing from the requirements, functions or endpoints, and are there any errors in the project?" Then: "Yes, fix them all" on the branch that is still in the PR.
+How the output was used:
+Checked each mandatory requirement in the official sheet against the code and confirmed the suspected bugs with a temporary probe test. Fixed flight edits (creation rules, local airport times, recalculated search date), the Departed status, schedule-change notifications, the flight minimum price filter and duration sort. Added the airline code and logo upload, hotel photo upload (up to 5), room deletion, the hotel minimum price filter, and real hotel and flight results for itinerary city groups. Added 10 e2e tests; build, lint, 121 unit and 110 e2e tests pass, npm audit reports 0 vulnerabilities and the route sweep finds no server errors.
+================================================
+Date: 2026-11-20
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-05, FLT-11, FLT-17, ACC-12, HTL-12, ITN-03 (PR #23)
+Prompt:
+"Check the unverified requirements" (pagination of every list, passenger types, flight details, deactivated-user content, hotel sorting, review rules) and fix what is missing.
+How the output was used:
+Confirmed HTL-23 review rules were already correct. Paginated flight search, my itineraries, hotel room lists and a flight's booking list at 10 per page and documented the flight-booking list parameters in Swagger. Added adult/child/infant counts to flight search (infants need no seat), a flight details response with airline, local times, duration and per-cabin seats and baggage (no internal ids), hotel sorting by price or rating, and the ITN-03 order by most recently updated. Posts and public itineraries of deactivated accounts are now hidden from public pages, likes, comments and cloning. Added 7 e2e tests; 121 unit and 117 e2e tests pass.
+================================================
+Date: 2026-11-20
+Student: Youssef Ayman
+Tool: Claude (Claude Code)
+Related Requirement: GEN-01, ACC-15, ACC-16, ITN-01, ITN-05, ITN-12, GEN-08 (PR #23)
+Prompt:
+"Is there anything missing again?"
+How the output was used:
+Checked the remaining mandatory requirements line by line. Found that admin actions wrote notification entries to the outbox but nothing ever sent them, so suspended users, moderators and travelers with bookings at a deactivated hotel or airline were never notified; added a sender that runs every minute, claims each entry once and notifies the affected people. Itinerary countries and day cities are now checked against the reference lists. Activity images now accept only real JPG/PNG content under server-generated names (WebP and disguised files are rejected) and are served by URL: publicly for public itineraries, and to the owner or an admin otherwise. Added 4 e2e tests; 121 unit and 120 e2e tests pass.
+================================================

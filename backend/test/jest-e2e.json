@@ -3,5 +3,8 @@
   "testEnvironment": "node",
   "rootDir": "..",
   "testMatch": ["**/*.e2e-spec.ts"],
-  "testTimeout": 120000
+  "testTimeout": 120000,
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  }
 }
