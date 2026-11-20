@@ -95,11 +95,11 @@ export class FlightBookingsService {
     }
   }
 
-  private async releaseSeats(legs: BookingLeg[], n: number, s: ClientSession) {
+  private async releaseSeats(legs: BookingLeg[], n: number, s: ClientSession, bookingId: Types.ObjectId) {
     for (const leg of legs) {
       await this.flights.updateOne(
         { _id: leg.flightId } as unknown as FilterQuery<Flight>,
-        { $inc: { [`cabins.${leg.cabinClass}.seatCount`]: n } },
+        { $inc: { [`cabins.${leg.cabinClass}.seatCount`]: n }, $pull: { seatAssignments: { bookingId } } },
         { session: s },
       );
     }
@@ -239,7 +239,7 @@ export class FlightBookingsService {
           booking.status = 'EXPIRED';
           booking.holdExpiresAt = undefined;
           await booking.save({ session });
-          await this.releaseSeats(booking.legs, booking.seatCount, session);
+          await this.releaseSeats(booking.legs, booking.seatCount, session, booking._id);
         }
         return { confirmed: false as const, reason: 'HOLD_EXPIRED_OR_INVALID' };
       }
@@ -252,7 +252,7 @@ export class FlightBookingsService {
         booking.status = 'EXPIRED';
         booking.holdExpiresAt = undefined;
         await booking.save({ session });
-        await this.releaseSeats(booking.legs, booking.seatCount, session);
+        await this.releaseSeats(booking.legs, booking.seatCount, session, booking._id);
         return { confirmed: false as const, reason: 'ACCOUNT_NOT_ACTIVE' };
       }
       for (const leg of booking.legs) {
@@ -299,7 +299,7 @@ export class FlightBookingsService {
           { $set: { status: 'EXPIRED' }, $unset: { holdExpiresAt: 1 } },
           { new: true, session },
         );
-        if (b) await this.releaseSeats(b.legs, b.seatCount, session); // only the winner releases
+        if (b) await this.releaseSeats(b.legs, b.seatCount, session, b._id); // only the winner releases
       });
     } finally {
       await session.endSession();
@@ -482,7 +482,7 @@ export class FlightBookingsService {
         releasedHolds = 0;
         const updated = await this.flights.updateOne(
           { _id: flight._id, status: 'SCHEDULED' } as unknown as FilterQuery<Flight>,
-          { $set: { status: 'CANCELLED' } },
+          { $set: { status: 'CANCELLED', seatAssignments: [] } },
           { session },
         );
         if (updated.modifiedCount !== 1) throw new ConflictException('Flight is no longer Scheduled');
@@ -493,7 +493,7 @@ export class FlightBookingsService {
           const wasConfirmed = booking.status === 'CONFIRMED';
           // Seats on the other leg of a round trip go back to inventory.
           const otherLegs = booking.legs.filter((l) => String(l.flightId) !== String(flight._id));
-          await this.releaseSeats(otherLegs, booking.seatCount, session);
+          await this.releaseSeats(otherLegs, booking.seatCount, session, booking._id);
           if (wasConfirmed) {
             booking.status = 'CANCELLED';
             booking.cancelledAt = now;
@@ -555,6 +555,7 @@ export class FlightBookingsService {
       legs: b.legs.map((l) => ({
         flightNumber: l.flightNumber,
         cabinClass: l.cabinClass,
+        selectedSeats: l.selectedSeats ?? [],
         from: l.departureAirport,
         to: l.arrivalAirport,
         departureUtc: l.departureTime,
@@ -588,13 +589,19 @@ export class FlightBookingsService {
       await session.withTransaction(async () => {
         const b = await this.bookings
           .findOneAndUpdate(
-            { _id: current._id, userId: current.userId, status: 'CONFIRMED' },
+            { _id: current._id, userId: current.userId, status: 'CONFIRMED', __v: current.__v, firstDeparture: current.firstDeparture },
             { $set: { status: 'CANCELLED', cancelledAt: new Date(), refundAmount, refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE' } },
             { new: true, session },
           )
           .lean();
         if (!b) throw new ConflictException('Booking is not cancellable');
-        await this.releaseSeats(b.legs, b.seatCount, session);
+        await this.releaseSeats(b.legs, b.seatCount, session, b._id);
+        await this.notifications.create([{
+          userId: b.userId, title: 'Flight booking cancelled',
+          message: `Flight booking ${b.reference} was cancelled.`,
+          type: NotificationType.BOOKING_CANCELLED,
+          metadata: { bookingId: String(b._id), bookingType: BookingType.FLIGHT },
+        }], { session });
         didCancel = true;
       });
     } finally {

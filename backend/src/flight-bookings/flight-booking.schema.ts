@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Types } from 'mongoose';
+import { Schema as MongoSchema, Types } from 'mongoose';
 
 export type BookingStatus = 'DRAFT' | 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
 export const CABIN_KEYS = ['economy', 'premiumEconomy', 'business', 'first'] as const;
@@ -20,7 +20,8 @@ const PassengerEntrySchema = SchemaFactory.createForClass(PassengerEntry);
 
 @Schema({ _id: false })
 export class BookingLeg {
-  @Prop({ type: Types.ObjectId, required: true }) flightId!: Types.ObjectId;
+  @Prop({ type: [String], default: [] }) selectedSeats?: string[];
+  @Prop({ type: MongoSchema.Types.ObjectId, required: true }) flightId!: Types.ObjectId;
   @Prop({ type: String, required: true }) flightNumber!: string;
   @Prop({ type: String, required: true }) cabinClass!: string; // economy | premiumEconomy | business | first
   @Prop({ type: String, required: true }) departureAirport!: string;
@@ -35,7 +36,7 @@ const BookingLegSchema = SchemaFactory.createForClass(BookingLeg);
 
 @Schema({ collection: 'flight_bookings', timestamps: true })
 export class FlightBooking {
-  @Prop({ type: Types.ObjectId, required: true, index: true }) userId!: Types.ObjectId;
+  @Prop({ type: MongoSchema.Types.ObjectId, required: true, index: true }) userId!: Types.ObjectId;
   @Prop({ type: String, required: true, unique: true }) reference!: string;
   @Prop({ type: String, required: true, default: 'DRAFT', index: true }) status!: BookingStatus;
   @Prop({ type: [BookingLegSchema], required: true }) legs!: BookingLeg[];
@@ -49,7 +50,7 @@ export class FlightBooking {
   @Prop({ type: [{ hoursBeforeDeparture: Number, refundPercentage: Number, _id: false }], default: [] })
   cancellationPolicy!: { hoursBeforeDeparture: number; refundPercentage: number }[];
   @Prop({ type: Date }) holdExpiresAt?: Date;
-  @Prop({ type: Types.ObjectId }) paymentId?: Types.ObjectId;
+  @Prop({ type: MongoSchema.Types.ObjectId }) paymentId?: Types.ObjectId;
   @Prop({ type: Date }) confirmedAt?: Date;
   @Prop({ type: Date }) cancelledAt?: Date;
   @Prop({ type: Number }) refundAmount?: number;

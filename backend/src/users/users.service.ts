@@ -52,7 +52,7 @@ export class UsersService {
         { _id: actor.id, authVersion: actor.authVersion, status: AccountStatus.ACTIVE },
         {
           $set: { passwordHash, mustChangePassword: false, failedLoginAttempts: 0 },
-          $unset: { lockedUntil: 1 },
+          $unset: { lockedUntil: 1, recoveryHash: 1, recoveryExpiresAt: 1 },
           $inc: { authVersion: 1, loginRevision: 1 },
         },
         { session: transaction },

@@ -475,6 +475,10 @@ export class FlightsService {
       );
     }
 
+    if (cabins && Object.entries(cabins).some(([name, cabin]) =>
+      flight.seatMaps?.[name]?.length && cabin.seatCount !== undefined && cabin.seatCount !== flight.cabins[name]?.seatCount)) {
+      throw new BadRequestException('Cabin capacity cannot change after a seat map is configured');
+    }
     // FLT-02, FLT-03: the same airport and time rules as on creation.
     const depCode = departureAirport ?? flight.departureAirport;
     const arrCode = arrivalAirport ?? flight.arrivalAirport;

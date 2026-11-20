@@ -492,10 +492,18 @@ describe('Accounts API with real disposable MongoDB replica set; external adapte
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([method, operation]) => ({ path, method, operation })),
     );
-    expect(operations).toHaveLength(141);
+    expect(operations).toHaveLength(162);
     expect(document.paths).toEqual(
       expect.objectContaining({
         '/api/payments/webhook': expect.objectContaining({ post: expect.any(Object) }),
+        '/api/auth/verify-email': expect.objectContaining({ post: expect.any(Object) }),
+        '/api/auth/reset-password': expect.objectContaining({ post: expect.any(Object) }),
+        '/api/admin/analytics': expect.objectContaining({ get: expect.any(Object) }),
+        '/api/favourites': expect.objectContaining({ get: expect.any(Object), post: expect.any(Object) }),
+        '/api/flight-bookings/{id}/change': expect.objectContaining({ patch: expect.any(Object) }),
+        '/api/itineraries/{id}/export.pdf': expect.objectContaining({ get: expect.objectContaining({
+          responses: expect.objectContaining({ '200': expect.objectContaining({ content: expect.objectContaining({ 'application/pdf': expect.any(Object) }) }) }),
+        }) }),
         '/api/flight-bookings/{id}/cancel': expect.objectContaining({ post: expect.any(Object) }),
         '/api/bookings/{type}/{id}/policies': expect.objectContaining({ get: expect.any(Object) }),
         '/api/admin/providers/airlines/{id}/verify': expect.objectContaining({

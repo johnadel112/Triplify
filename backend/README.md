@@ -1,6 +1,6 @@
 # Triplify backend
 
-NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Email verification, SMTP, public email reset and analytics are intentionally excluded.
+NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Optional bonus APIs now include email verification, SMTP notifications, email recovery and analytics; see [BONUS.md](docs/BONUS.md).
 
 ## Run locally
 
@@ -86,3 +86,10 @@ This launches separate temporary database files/processes; it does not connect t
 - Generated admin reset passwords are returned once with `Cache-Control: no-store`; admins must deliver over a verified secure channel, never email/chat logs. Delivery itself is outside this backend. The server cannot display an old temporary password again; reset again if lost. Moderator creation accepts an admin-supplied temporary password and never echoes it. Neither temporary workflow automatically expires the password; require prompt delivery/use and reset if compromised.
 
 See [API](docs/API.md), [integration contracts](docs/TEAM_INTEGRATION.md), [seed provenance](docs/REFERENCE_DATA.md), and [coverage/limitations](docs/DELIVERY.md).
+
+# Bonus features
+
+The eight optional feature groups are implemented as backend APIs. See
+[bonus API and setup guide](docs/BONUS.md) for SMTP configuration, token flows,
+seat maps and same-fare flight changes, moderator replies, private booking attachments,
+PDF downloads, blog itinerary links, analytics and favourites.

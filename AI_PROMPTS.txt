@@ -356,3 +356,12 @@ Prompt:
 How the output was used:
 Checked the remaining mandatory requirements line by line. Found that admin actions wrote notification entries to the outbox but nothing ever sent them, so suspended users, moderators and travelers with bookings at a deactivated hotel or airline were never notified; added a sender that runs every minute, claims each entry once and notifies the affected people. Itinerary countries and day cities are now checked against the reference lists. Activity images now accept only real JPG/PNG content under server-generated names (WebP and disguised files are rejected) and are served by URL: publicly for public itineraries, and to the owner or an admin otherwise. Added 4 e2e tests; 121 unit and 120 e2e tests pass.
 ================================================
+Date: 2026-11-20
+Tool: OpenAI Codex
+Related Requirement: Optional bonus features (all eight supplied groups)
+Prompt:
+"lets start implementing the bonus questions before the cloud deployment. When you finish implemntation, commit and merge to main"
+Clarification: "use the 8 listed feature groups"
+How the output was used:
+Implemented backend email verification/recovery, encrypted retryable SMTP delivery, same-fare flight changes and seat selection, hotel moderator replies, private booking attachments, itinerary PDF export, public itinerary links on blog posts, admin analytics and favourites. Added disposable-database integration tests for authorization, privacy, token replay/expiry, email delivery failures, concurrent seat selection and booking changes, and preserved upstream baggage/provider-cancellation behavior while integrating the latest main. Documented API contracts and SMTP setup in backend/docs/BONUS.md. No cloud deployment or real email delivery was performed.
+================================================

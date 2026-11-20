@@ -1,10 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongoSchema, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class AirlineProfile extends Document {
   /** Set when the assigned moderator first manages the profile; an admin creates airlines first (FLT-01). */
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: MongoSchema.Types.ObjectId, ref: 'User' })
   moderatorId?: Types.ObjectId;
 
   @Prop({ type: String, required: true })
@@ -42,10 +42,13 @@ export class AirlineProfile extends Document {
 
 @Schema({ timestamps: true })
 export class Flight extends Document {
+  @Prop({ type: Object, default: {} }) seatMaps!: Record<string, string[]>;
+  @Prop({ type: [{ seat: String, cabinClass: String, bookingId: MongoSchema.Types.ObjectId, _id: false }], default: [], select: false })
+  seatAssignments!: { seat: string; cabinClass: string; bookingId: Types.ObjectId }[];
   @Prop({ type: String, required: true })
   flightNumber!: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'AirlineProfile', required: true })
+  @Prop({ type: MongoSchema.Types.ObjectId, ref: 'AirlineProfile', required: true })
   airlineId!: Types.ObjectId;
 
   @Prop({ type: String, required: true })

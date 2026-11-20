@@ -20,6 +20,7 @@ export const PostImageSchema = SchemaFactory.createForClass(PostImage);
 
 @Schema({ timestamps: true, collection: 'blog_posts', optimisticConcurrency: true })
 export class BlogPost {
+  @Prop({ type: MongoSchema.Types.ObjectId }) itineraryId?: Types.ObjectId;
   @Prop({ type: MongoSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   authorId!: Types.ObjectId;
 

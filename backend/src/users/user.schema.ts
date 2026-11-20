@@ -6,6 +6,14 @@ export class User {
   @Prop({ required: true, trim: true, maxlength: 100 }) name!: string;
   @Prop({ required: true, lowercase: true, trim: true, unique: true, maxlength: 254 })
   email!: string;
+  @Prop() emailVerifiedAt?: Date;
+  @Prop({ default: true }) emailNotifications!: boolean;
+  @Prop({ select: false }) verificationHash?: string;
+  @Prop({ select: false }) verificationExpiresAt?: Date;
+  @Prop({ select: false }) verificationRequestedAt?: Date;
+  @Prop({ select: false }) recoveryHash?: string;
+  @Prop({ select: false }) recoveryExpiresAt?: Date;
+  @Prop({ select: false }) recoveryRequestedAt?: Date;
   @Prop({ required: true, select: false }) passwordHash!: string;
   @Prop({ maxlength: 30 }) phoneNumber?: string;
   @Prop({ default: 'USD' }) preferredCurrency!: string;
@@ -29,6 +37,8 @@ export class User {
 export type UserDocument = HydratedDocument<User>;
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ role: 1, status: 1, createdAt: -1 });
+UserSchema.index({ verificationHash: 1 }, { sparse: true });
+UserSchema.index({ recoveryHash: 1 }, { sparse: true });
 UserSchema.pre('validate', function () {
   const expected =
     this.role === UserRole.HOTEL_MODERATOR
@@ -48,6 +58,8 @@ export function publicUser(u: UserDocument) {
     id: u.id as string,
     name: u.name,
     email: u.email,
+    emailVerified: !!u.emailVerifiedAt,
+    emailNotifications: u.emailNotifications,
     phoneNumber: u.phoneNumber,
     preferredCurrency: u.preferredCurrency,
     role: u.role,
