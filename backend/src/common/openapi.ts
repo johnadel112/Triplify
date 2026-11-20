@@ -23,6 +23,8 @@ export function addResponseContracts(document: OpenAPIObject) {
         id: string,
         name: string,
         email: { type: 'string', format: 'email' },
+        emailVerified: { type: 'boolean' },
+        emailNotifications: { type: 'boolean' },
         phoneNumber: string,
         preferredCurrency: string,
         role: { type: 'string', enum: ['USER', 'ADMIN', 'HOTEL_MODERATOR', 'AIRLINE_MODERATOR'] },
@@ -126,6 +128,16 @@ export function addResponseContracts(document: OpenAPIObject) {
       properties: { code: string, name: string, minorUnits: { type: 'integer' } },
     },
     Health: { type: 'object', properties: { status: { type: 'string', enum: ['ok'] } } },
+    Analytics: { type: 'object', properties: {
+      asOf: date, period: { type: 'string', enum: ['all-time'] },
+      totals: { type: 'object', additionalProperties: { type: 'integer' } },
+      flightBookings: { type: 'array', items: { type: 'object', properties: { _id: string, count: { type: 'integer' } } } },
+      hotelBookings: { type: 'array', items: { type: 'object', properties: { _id: string, count: { type: 'integer' } } } },
+      favourites: { type: 'array', items: { type: 'object', properties: { _id: string, count: { type: 'integer' } } } },
+      revenue: { type: 'array', items: { type: 'object', properties: { currency: string, paid: { type: 'number' }, refunded: { type: 'number' }, net: { type: 'number' } } } },
+    } },
+    Favourite: { type: 'object', properties: { id: string, type: string, target: { type: 'object', nullable: true, properties: { id: string, title: string } } } },
+    BookingAttachment: { type: 'object', properties: { id: string, type: string, bookingId: string, status: string, reference: { ...string, nullable: true }, description: { ...string, nullable: true }, start: { ...string, nullable: true }, end: { ...string, nullable: true } } },
   };
   document.components ??= {};
   document.components.schemas = { ...document.components.schemas, ...schemas };
@@ -154,19 +166,22 @@ export function addResponseContracts(document: OpenAPIObject) {
       else if (path.endsWith('/me/password')) result = ref('PasswordChanged');
       else if (path.endsWith('/admin/users')) result = page(ref('AccountSummary'));
       else if (path.endsWith('/admin/bookings')) result = page(ref('BookingSummary'));
-      else if (path.endsWith('/reset-password')) result = ref('TemporaryPassword');
+      else if (path.endsWith('/admin/analytics')) result = ref('Analytics');
+      else if (path.endsWith('/favourites') && method === 'get') result = page(ref('Favourite'));
+      else if (path.includes('/itineraries/') && path.endsWith('/bookings') && method === 'get') result = { type: 'object', properties: { items: { type: 'array', items: ref('BookingAttachment') } } };
+      else if (path.endsWith('/auth/reset-password')) result = ref('PasswordChanged');
+      else if (path.endsWith('/seat-map/{legIndex}')) result = { type: 'object', properties: { legIndex: { type: 'integer' }, cabinClass: string, seats: { type: 'array', items: { type: 'object', properties: { seat: string, available: { type: 'boolean' }, selected: { type: 'boolean' } } } } } };
+      else if (path.endsWith('/seats') || path.endsWith('/seat-map')) result = { type: 'object', properties: { legIndex: { type: 'integer' }, cabinClass: string, seats: { type: 'array', items: string } } };
+      else if (path.includes('/flight-bookings/') && path.endsWith('/change')) result = { type: 'object', description: 'Updated confirmed flight booking with authoritative legs, dates, passengers and unchanged paid total', additionalProperties: true };
+      else if (path.includes('/admin/') && path.endsWith('/reset-password')) result = ref('TemporaryPassword');
       else if (path.includes('/admin/providers/')) result = ref('ProviderStateChange');
       else if (path.includes('/admin/')) result = ref('AccountStateChange');
-      const status =
-        method === 'post' &&
-        (path.endsWith('/register') ||
-          path.endsWith('/moderators') ||
-          path.endsWith('/reset-password'))
-          ? '201'
-          : '200';
+      const status = Object.keys(operation.responses).find(code => /^2\d\d$/.test(code)) ?? (method === 'post' ? '201' : '200');
+      const declaredResponses = operation.responses;
       operation.responses = {
         [status]: { description: 'Success', content: { 'application/json': { schema: result } } },
       };
+      if (path.endsWith('/export.pdf')) operation.responses = declaredResponses;
       for (const code of [400, 401, 403, 404, 409, 429, 500, 503])
         operation.responses[code] = {
           description: {

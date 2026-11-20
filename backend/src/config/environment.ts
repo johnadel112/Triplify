@@ -35,6 +35,16 @@ export function validateEnvironment(env: Record<string, unknown>) {
   if (mode === 'production' && origins.some((x) => !x.startsWith('https://')))
     throw new Error('Production origins must use HTTPS');
   const port = Number(env.PORT ?? 3000);
+  const mailMode = String(env.MAIL_MODE ?? 'disabled');
+  if (!['disabled', 'smtp'].includes(mailMode)) throw new Error('MAIL_MODE must be disabled or smtp');
+  if (mailMode === 'smtp') {
+    for (const name of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'MAIL_FROM']) {
+      if (!String(env[name] ?? '').trim()) throw new Error(`${name} is required for SMTP`);
+    }
+    const smtpPort = Number(env.SMTP_PORT ?? 587);
+    if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) throw new Error('Invalid SMTP_PORT');
+    if (!['true', 'false'].includes(String(env.SMTP_SECURE ?? 'false'))) throw new Error('Invalid SMTP_SECURE');
+  }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 
   const stripeSecretKey = String(env.STRIPE_SECRET_KEY ?? '').trim();
@@ -47,6 +57,7 @@ export function validateEnvironment(env: Record<string, unknown>) {
   return {
     ...env,
     NODE_ENV: mode,
+    MAIL_MODE: mailMode,
     PORT: port,
     MONGODB_URI: uri,
     MONGODB_DNS_SERVERS: mongoDnsServers.join(','),

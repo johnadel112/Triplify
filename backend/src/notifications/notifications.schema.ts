@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongoSchema, Types } from 'mongoose';
 
 export enum NotificationType {
   BOOKING_CONFIRMED = 'BOOKING_CONFIRMED',
@@ -14,7 +14,8 @@ export enum NotificationType {
 
 @Schema({ timestamps: true })
 export class Notification extends Document {
-  @Prop({ required: true, index: true, type: Types.ObjectId, ref: 'User' })
+  @Prop({ default: false }) emailQueued!: boolean;
+  @Prop({ required: true, index: true, type: MongoSchema.Types.ObjectId, ref: 'User' })
   userId!: Types.ObjectId;
 
   @Prop({ required: true })
@@ -45,4 +46,5 @@ export class Notification extends Document {
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 NotificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
+NotificationSchema.index({ emailQueued: 1, createdAt: 1 });
 

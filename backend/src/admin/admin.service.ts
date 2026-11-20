@@ -134,7 +134,7 @@ export class AdminService {
         { _id: id, role: { $ne: UserRole.ADMIN }, status: { $ne: AccountStatus.DEACTIVATED } },
         {
           $set: { passwordHash, mustChangePassword: true, failedLoginAttempts: 0 },
-          $unset: { lockedUntil: 1 },
+          $unset: { lockedUntil: 1, recoveryHash: 1, recoveryExpiresAt: 1 },
           $inc: { authVersion: 1, loginRevision: 1 },
         },
         { session: transaction },

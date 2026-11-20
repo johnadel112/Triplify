@@ -35,6 +35,7 @@ import { BlogModule } from './blog/blog.module';
 
 // Magdy's Hotels module
 import { HotelsModule } from './hotels/hotels.module';
+import { BonusModule } from './bonus/bonus.module';
 
 
 @ApiTags('Health')
@@ -91,6 +92,7 @@ class HealthController {
     ItinerariesModule,
     HotelsModule,
     BlogModule,
+    BonusModule,
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }]),
   ],
 

@@ -32,6 +32,7 @@ const OBJECT_ID = /^[\da-f]{24}$/i;
 const FILE_NAME = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\.(?:jpg|png)$/i;
 
 type Row = {
+  itineraryId?: Types.ObjectId;
   _id: Types.ObjectId;
   authorId: Types.ObjectId;
   title: string;
@@ -95,13 +96,21 @@ export class BlogPostsService {
       ]),
     ]);
     const byAuthor = new Map(authors.map((u) => [u._id.toString(), u]));
+    const attached = await this.itineraries.find({
+      _id: { $in: rows.flatMap(post => post.itineraryId ? [post.itineraryId] : []) },
+      isPublic: true, hidden: { $ne: true },
+    }).select('title userId').lean();
+    const byItinerary = new Map(attached.map(itinerary => [String(itinerary._id), itinerary]));
     const likeCount = new Map(likes.map((x) => [x._id.toString(), x.count]));
     const commentCount = new Map(comments.map((x) => [x._id.toString(), x.count]));
     return rows.map((post) => {
       const author = byAuthor.get(post.authorId.toString());
+      const itinerary = post.itineraryId ? byItinerary.get(String(post.itineraryId)) : undefined;
       return {
         id: post._id.toString(),
         title: post.title,
+        itinerary: itinerary && String(itinerary.userId) === String(post.authorId)
+          ? { id: String(itinerary._id), title: itinerary.title } : null,
         ...(includeBody ? { body: post.body } : {}),
         excerpt: excerpt(post.body),
         tags: post.tags,

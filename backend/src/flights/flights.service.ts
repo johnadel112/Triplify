@@ -190,6 +190,10 @@ export class FlightsService {
       );
     }
 
+    if (updateDto.cabins && Object.keys(flight.seatMaps ?? {}).length) {
+      throw new BadRequestException('Cabin inventory cannot be replaced after a seat map is configured');
+    }
+
     Object.assign(flight, updateDto);
     return flight.save();
   }
