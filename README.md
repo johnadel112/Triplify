@@ -67,7 +67,32 @@ Triplify is developed collaboratively by a team of seven members:
 
 Our vision is to make travel planning more accessible, organized, and enjoyable by combining travel discovery, booking, and itinerary management into one integrated digital platform.
 
-## Milestone 1 backend
+## Milestone 2 frontend
+
+John's Next.js App Router frontend is in `frontend/`. It includes the public travel shell, cookie authentication, profile/security settings, role-aware route guards, and administrator account, provider, booking, report and audit interfaces. It reuses the preserved frontend foundation. Backend contracts and known limitations are documented in [the frontend implementation handoff](docs/FRONTEND_MILESTONE_2.md).
+
+```powershell
+cd frontend
+npm.cmd ci
+Copy-Item .env.example .env.local
+npm.cmd run dev
+```
+
+Open `http://localhost:3001`. Run Nest on port 3000 with `FRONTEND_URL=http://localhost:3001` and the backend's local cookie settings. `NEXT_PUBLIC_API_BASE_URL=/api` keeps browser requests same-origin; `BACKEND_API_URL=http://localhost:3000` configures the server proxy. Production requires HTTPS and secure backend cookies.
+
+```powershell
+npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+# Build backend first; browser tests create a disposable database and start both servers.
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
+```
+
+Browser tests require free ports 3000/3001 and installed backend dependencies/build output. They never use the project database. Demonstration screenshots are written to ignored `frontend/test-results/demo-*.png`. Search, booking, itinerary, notification and moderator operations remain assigned to their feature owners; unavailable entry points are explicitly marked.
+
+## Backend setup
 
 The submission backend is in `backend/` and uses NestJS, TypeScript and MongoDB/Mongoose. It includes the integrated REST APIs for accounts and administration, providers, flights and hotels, bookings, Stripe payment/refund workflows, notifications, blog moderation and itineraries.
 
@@ -84,7 +109,7 @@ npm.cmd run test:e2e -- --runInBand
 
 Development Swagger is served at `http://localhost:3000/api/docs`, with JSON at `/api/docs-json`. See [backend setup](backend/README.md), [API contract](backend/docs/API.md), [integration workflow](docs/INTEGRATION_WORKFLOW.md), and [finalization status](docs/FINALIZATION_STATUS.md).
 
-MongoDB Atlas is supported through `MONGODB_URI`; booking, payment, provider and account consistency flows require transactions and therefore a replica set. Atlas credentials are not stored in this repository. The Next.js draft is isolated from the Milestone 1 backend branch and remains Milestone 2 work.
+MongoDB Atlas is supported through `MONGODB_URI`; booking, payment, provider and account consistency flows require transactions and therefore a replica set. Atlas credentials are not stored in this repository. The frontend integrates through NestJS only.
 
 ---
 
