@@ -15,7 +15,7 @@ export class HotelDiscoveryController {
   // Register this controller before HotelsController so /hotels/search isn't treated as an ID.
   @Public()
   @Get('search')
-  @ApiOperation({ summary: 'HTL-11/12: Search by city/country, stay dates, guests, rooms, max price, average rating' })
+  @ApiOperation({ summary: 'HTL-11/12: Search by city/country, stay dates, guests, rooms, min/max price, average rating' })
   search(@Query() query: HotelSearchQuery) {
     return this.discovery.search(query);
   }

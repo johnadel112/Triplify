@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, IsMongoId,
@@ -17,6 +18,8 @@ export class PassengerDto {
   @IsString() passportNumber!: string;
   @IsIn(['adult', 'child', 'infant']) type!: 'adult' | 'child' | 'infant';
   @IsOptional() @IsInt() @Min(0) @Max(50) extraBaggageKg?: number;
+  /** FLT-19: extra bags; limited by the airline's maxExtraBagsPerPassenger (FLT-08). */
+  @IsOptional() @IsInt() @Min(0) @Max(10) extraBags?: number;
 }
 
 export class CreateFlightBookingDto {
@@ -32,7 +35,10 @@ export class HoldDto {
 }
 
 export class ListBookingsQuery {
+  @ApiPropertyOptional({ enum: ['upcoming', 'past', 'cancelled'], default: 'upcoming' })
   @IsOptional() @IsIn(['upcoming', 'past', 'cancelled']) tab?: 'upcoming' | 'past' | 'cancelled';
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @ApiPropertyOptional({ minimum: 1, maximum: 50, default: 10 })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) limit?: number;
 }

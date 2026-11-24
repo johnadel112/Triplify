@@ -130,3 +130,11 @@ export class ReferenceQuery extends PageDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(/^[A-Z]{2}$/) country?: string;
   @ApiPropertyOptional() @IsOptional() @Trim() @IsString() @MaxLength(100) search?: string;
 }
+export class AttractionQuery extends PageDto {
+  @ApiPropertyOptional({ example: 'cairo', description: 'City.code' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z_]{1,50}$/)
+  city?: string;
+  @ApiPropertyOptional() @IsOptional() @Trim() @IsString() @MaxLength(100) search?: string;
+}

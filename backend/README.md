@@ -1,6 +1,8 @@
 # Triplify backend
 
-NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Email verification, SMTP, public email reset and analytics are intentionally excluded.
+NestJS/TypeScript, MongoDB/Mongoose, bcrypt, JWT access cookies and rotating opaque refresh cookies. The integrated Milestone 1 backend includes accounts/admin, flights and hotels, bookings, payments/refunds, notifications, blog/moderation, itineraries and reference data. External provider failures fail closed; notification events persist for asynchronous delivery. Optional bonus APIs now include email verification, SMTP/HTTPS notifications, email recovery and analytics; see [BONUS.md](docs/BONUS.md).
+
+For Render Free with Cloudinary image storage and Resend email, see [deployment instructions](docs/DEPLOYMENT.md).
 
 ## Run locally
 
@@ -18,7 +20,37 @@ npm.cmd run start:dev
 
 Configure MongoDB Atlas: create a cluster/database `triplify`; create a database user limited to that database, allow your development IP (and the deployment's egress IP), and copy Atlas's Drivers connection URI into `MONGODB_URI` with the database name. URL-encode password special characters. Keep TLS enabled. Transactions require a replica set; Atlas supports this, a standalone local mongod does not. No real Atlas credentials were provided or provisioned by this implementation.
 
+If Node is forced through a broken local DNS proxy and reports `querySrv ECONNREFUSED` while `Resolve-DnsName` succeeds, set `MONGODB_DNS_SERVERS=1.1.1.1,8.8.8.8` in the ignored local `.env`. The override applies only to Node's MongoDB connection and seed commands; it does not disable Atlas TLS, authentication, or certificate verification.
+
+If the network also blocks Atlas TXT queries (`queryTxt ETIMEOUT`), set `MONGODB_DIRECT_HOSTS` to Atlas's comma-separated `host:port` seed list and `MONGODB_REPLICA_SET` to the cluster's replica-set name. Both values are public discovery metadata available from Atlas DNS. Triplify then converts the existing protected SRV URI in memory to the equivalent standard multi-host URI, retaining its encoded credentials and database while requiring TLS and `authSource=admin`. Refresh these values if Atlas changes the cluster topology.
+
 Set `JWT_ACCESS_SECRET` to at least 32 random characters; generate locally, for example `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Set `FRONTEND_URL` to exact comma-separated origins, without paths/trailing slashes/wildcards. `PORT` defaults to 3000. `.env` is ignored by Git. Do not paste secrets into issues or CI logs.
+
+## Stripe test-mode integration
+
+The backend creates server-priced PaymentIntents, verifies signed webhook events from the raw request body, reconciles successful payments with their bookings, and issues idempotent refunds. It deliberately accepts only Stripe test-mode secret keys for Milestone 1.
+
+Install the Stripe CLI separately, then authenticate it without placing credentials in shell history:
+
+```powershell
+stripe.cmd --version
+npm.cmd run stripe:login
+```
+
+Put the Stripe dashboard test secret key (`sk_test_...`) in `STRIPE_SECRET_KEY` inside the ignored `backend/.env`. In a second terminal, start the local webhook listener:
+
+```powershell
+npm.cmd run stripe:listen
+```
+
+Copy the listener's `whsec_...` signing secret into `STRIPE_WEBHOOK_SECRET` in `backend/.env`, then restart NestJS. Keep the listener running while testing. With the backend on port 3000, the listener forwards only the two events the application handles to `POST /api/payments/webhook`:
+
+```powershell
+npm.cmd run stripe:trigger:success
+npm.cmd run stripe:trigger:failure
+```
+
+Generic CLI trigger events normally have no matching Triplify payment record, so they verify transport and signature handling but do not confirm a booking. A complete booking test must create a pending booking, accept its policies, call `POST /api/payments`, and complete that returned PaymentIntent using a Stripe test payment method. Never use live keys or real card details for Milestone 1.
 
 For initial admin provisioning set `ADMIN_SEED_EMAIL`, `ADMIN_SEED_NAME`, `ADMIN_SEED_PASSWORD` in the protected environment. Admin seed passwords require 12–72 printable ASCII characters including letter/digit. Seeding never promotes an existing non-admin or overwrites an existing admin password. Remove seed credentials from runtime environment after provisioning. Logged-in admins rotate their own credentials with the ordinary current-password change endpoint; lost-admin recovery requires a separately reviewed privileged database maintenance procedure, not repeated seeding or a public reset endpoint.
 
@@ -56,3 +88,10 @@ This launches separate temporary database files/processes; it does not connect t
 - Generated admin reset passwords are returned once with `Cache-Control: no-store`; admins must deliver over a verified secure channel, never email/chat logs. Delivery itself is outside this backend. The server cannot display an old temporary password again; reset again if lost. Moderator creation accepts an admin-supplied temporary password and never echoes it. Neither temporary workflow automatically expires the password; require prompt delivery/use and reset if compromised.
 
 See [API](docs/API.md), [integration contracts](docs/TEAM_INTEGRATION.md), [seed provenance](docs/REFERENCE_DATA.md), and [coverage/limitations](docs/DELIVERY.md).
+
+# Bonus features
+
+The eight optional feature groups are implemented as backend APIs. See
+[bonus API and setup guide](docs/BONUS.md) for SMTP configuration, token flows,
+seat maps and same-fare flight changes, moderator replies, private booking attachments,
+PDF downloads, blog itinerary links, analytics and favourites.

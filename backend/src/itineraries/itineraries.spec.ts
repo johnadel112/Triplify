@@ -19,9 +19,9 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     countDocuments: jest.Mock;
   };
   let mockItineraryModel: MockModel;
-  let mockUserModel: { findById: jest.Mock };
+  let mockUserModel: { findById: jest.Mock; exists: jest.Mock; find: jest.Mock };
   let mockCityModel: { findOne: jest.Mock };
-  let mockCountryModel: { findOne: jest.Mock };
+  let mockCountryModel: { findOne: jest.Mock; countDocuments: jest.Mock };
   let mockConfigService: { get: jest.Mock };
 
   const actorUser: Principal = {
@@ -70,6 +70,9 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
     mockUserModel = {
       findById: jest.fn(),
+      // ACC-12 lookups: no deactivated owners in these tests.
+      exists: jest.fn().mockResolvedValue(null),
+      find: jest.fn(() => ({ distinct: jest.fn().mockResolvedValue([]) })),
     };
 
     mockCityModel = {
@@ -78,6 +81,8 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
 
     mockCountryModel = {
       findOne: jest.fn(),
+      // ITN-01: every requested country is in the reference list.
+      countDocuments: jest.fn((filter: { code: { $in: string[] } }) => Promise.resolve(filter.code.$in.length)),
     };
 
     service = new ItinerariesService(
@@ -179,7 +184,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       };
 
       mockItineraryModel.findById.mockResolvedValue(itineraryDoc);
-      mockCityModel.findOne.mockResolvedValue({ name: 'Paris' });
+      mockCityModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ code: 'paris', name: 'Paris' }) });
 
       // Mock getItineraryById response
       jest.spyOn(service, 'getItineraryById').mockResolvedValue({
@@ -405,13 +410,30 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
     });
 
     it('handles FX conversion across multiple currencies', async () => {
-      // 100 EUR -> USD (100 / 0.92 ~ 108.7)
-      const converted = await fxRatesService.convert(100, 'EUR', 'USD');
-      expect(converted).toBeGreaterThan(100);
+      // Simulated FXRatesAPI response, so the test never depends on the network.
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            base: 'USD',
+            date: '2026-11-19T00:00:00.000Z',
+            rates: { USD: 1, EUR: 0.92 },
+          }),
+      } as unknown as Response);
+      try {
+        // 100 EUR -> USD (100 / 0.92 ~ 108.7)
+        const converted = await fxRatesService.convert(100, 'EUR', 'USD');
+        expect(converted).toBe(108.7);
 
-      // Same currency returns exact amount
-      const same = await fxRatesService.convert(100, 'USD', 'USD');
-      expect(same).toBe(100);
+        // Same currency returns exact amount
+        const same = await fxRatesService.convert(100, 'USD', 'USD');
+        expect(same).toBe(100);
+        expect(fxRatesService.describe()).toMatchObject({ provider: 'FXRatesAPI', stale: false });
+      } finally {
+        fetchMock.mockRestore();
+      }
     });
 
     it('rejects invalid currency code in FX conversion', async () => {
@@ -640,6 +662,7 @@ describe('Itineraries Module (ITN-01 .. ITN-26, GEN-08)', () => {
       expect(mockItineraryModel.find.mock.calls[0][0]).toEqual({
         isPublic: true,
         hidden: { $ne: true },
+        userId: { $nin: [] }, // ACC-12: deactivated owners are excluded
       });
     });
   });

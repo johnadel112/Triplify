@@ -5,6 +5,8 @@ import { REVIEW_MAX_LENGTH } from './hotel-bookings.constants';
 /** HTL-23: one rating (1-5) with optional text per completed reservation. */
 @Schema({ timestamps: true, collection: 'hotel_reviews' })
 export class Review {
+  @Prop({ type: { text: { type: String, maxlength: 2000 }, updatedAt: Date, _id: false } })
+  moderatorReply?: { text: string; updatedAt: Date };
   @Prop({ type: MongooseSchema.Types.ObjectId, required: true }) bookingId!: Types.ObjectId;
   @Prop({ type: MongooseSchema.Types.ObjectId, required: true }) hotelId!: Types.ObjectId;
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })

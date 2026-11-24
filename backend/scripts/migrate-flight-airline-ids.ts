@@ -1,17 +1,27 @@
 import { connect, disconnect, model } from 'mongoose';
 import { AirlineProfile, AirlineProfileSchema, Flight, FlightSchema } from '../src/flights/flights.schema';
+import { buildMongoConnectionUri, configureMongoDns } from '../src/config/mongodb-dns';
 
 async function main() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI is required');
+  configureMongoDns(process.env.MONGODB_DNS_SERVERS);
   const apply = process.argv.includes('--apply');
-  await connect(uri, { serverSelectionTimeoutMS: 10000 });
+  await connect(
+    buildMongoConnectionUri(
+      uri,
+      process.env.MONGODB_DIRECT_HOSTS,
+      process.env.MONGODB_REPLICA_SET,
+    ),
+    { serverSelectionTimeoutMS: 10000 },
+  );
   const airlines = model(AirlineProfile.name, AirlineProfileSchema);
   const flights = model(Flight.name, FlightSchema);
   const profiles = await airlines.find().select('_id moderatorId name').lean();
   const changes: Array<{ airline: string; moderatorId: string; flights: number }> = [];
   for (const profile of profiles) {
-    if (profile._id.equals(profile.moderatorId)) continue;
+    // Airlines created by an admin may not have a moderator yet: nothing to migrate.
+    if (!profile.moderatorId || profile._id.equals(profile.moderatorId)) continue;
     const filter = { airlineId: profile.moderatorId };
     const count = await flights.countDocuments(filter);
     if (!count) continue;

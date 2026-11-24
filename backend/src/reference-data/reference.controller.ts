@@ -3,8 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/guards';
-import { ReferenceQuery } from '../common/dto';
-import { Airport, City, Country, Currency } from './reference.schema';
+import { AttractionQuery, ReferenceQuery } from '../common/dto';
+import { Airport, Attraction, City, Country, Currency } from './reference.schema';
 export const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 @Public()
 @ApiTags('Reference data')
@@ -15,11 +15,17 @@ export class ReferenceController {
     @InjectModel(City.name) private cities: Model<City>,
     @InjectModel(Airport.name) private airports: Model<Airport>,
     @InjectModel(Currency.name) private currencies: Model<Currency>,
+    @InjectModel(Attraction.name) private attractions: Model<Attraction>,
   ) {}
-  private async list<T>(model: Model<T>, query: ReferenceQuery, countryField?: string) {
+  private async list<T>(
+    model: Model<T>,
+    query: ReferenceQuery | AttractionQuery,
+    countryField?: string,
+  ) {
     const filter: Record<string, unknown> = {};
     if (query.search) filter.name = { $regex: escapeRegex(query.search), $options: 'i' };
-    if (query.country && countryField) filter[countryField] = query.country;
+    if ('country' in query && query.country && countryField) filter[countryField] = query.country;
+    if ('city' in query && query.city) filter.city = query.city;
     const [items, total] = await Promise.all([
       model
         .find(filter)
@@ -51,5 +57,10 @@ export class ReferenceController {
     @Query() query: ReferenceQuery,
   ) {
     return this.list(this.currencies, query);
+  }
+  @Get('attractions')
+  @ApiOperation({ summary: 'List official attractions, optionally filtered by city code' })
+  attraction(@Query() query: AttractionQuery) {
+    return this.list(this.attractions, query);
   }
 }

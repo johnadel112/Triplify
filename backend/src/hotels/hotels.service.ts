@@ -5,6 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { join } from 'path';
+import { MEDIA_FILE_NAME, mediaDir, prepareImages, removeImage, storeImages } from '../common/media';
+
+export const HOTEL_MEDIA_FOLDER = 'hotels';
+export const HOTEL_MEDIA_PREFIX = '/api/hotels/media/';
+const MAX_HOTEL_IMAGES = 5;
 import { Model } from 'mongoose';
 import { Principal, UserRole } from '../common/domain';
 import { CreateHotelDto, UpdateHotelDto } from './create-hotel.dto';
@@ -63,6 +69,52 @@ export class HotelsService {
       .select('-moderatorId -__v').exec();
     if (!hotel) throw new NotFoundException('Hotel not found');
     return hotel;
+  }
+
+  // HTL-01, GEN-08: up to 5 uploaded JPG/PNG photos per hotel (<= 5 MB each), served by URL.
+  async addImages(hotelId: string, files: Express.Multer.File[], actor: Principal) {
+    this.assertModerator(actor, hotelId);
+    const hotel = await this.hotelModel.findById(hotelId);
+    if (!hotel) throw new NotFoundException('Hotel not found');
+    const prepared = prepareImages(files);
+    if (hotel.images.length + prepared.length > MAX_HOTEL_IMAGES) {
+      throw new BadRequestException(`A hotel can have at most ${MAX_HOTEL_IMAGES} images`);
+    }
+    const rollback = await storeImages(HOTEL_MEDIA_FOLDER, prepared);
+    try {
+      const updated = await this.hotelModel.findOneAndUpdate(
+        { _id: hotelId, [`images.${MAX_HOTEL_IMAGES - prepared.length}`]: { $exists: false } },
+        { $push: { images: { $each: prepared.map((p) => `${HOTEL_MEDIA_PREFIX}${p.filename}`) } } },
+        { new: true },
+      ).select('-moderatorId -__v');
+      if (!updated) throw new BadRequestException(`A hotel can have at most ${MAX_HOTEL_IMAGES} images`);
+      return updated;
+    } catch (error) {
+      await rollback();
+      throw error;
+    }
+  }
+
+  async removeImage(hotelId: string, imageId: string, actor: Principal) {
+    this.assertModerator(actor, hotelId);
+    const url = `${HOTEL_MEDIA_PREFIX}${imageId}`;
+    const updated = await this.hotelModel.findOneAndUpdate(
+      { _id: hotelId, images: url },
+      { $pull: { images: url } },
+      { new: true },
+    ).select('-moderatorId -__v');
+    if (!updated) throw new NotFoundException('Image not found on this hotel');
+    await removeImage(HOTEL_MEDIA_FOLDER, imageId);
+    return updated;
+  }
+
+  /** Public: an uploaded photo is served only while it belongs to an active, verified hotel. */
+  async imagePath(filename: string) {
+    const url = `${HOTEL_MEDIA_PREFIX}${filename}`;
+    if (!MEDIA_FILE_NAME.test(filename) || !(await this.hotelModel.exists({ images: url, active: true, verified: true }))) {
+      throw new NotFoundException('Image not found');
+    }
+    return join(mediaDir(HOTEL_MEDIA_FOLDER), filename);
   }
 
   // HTL-01: Moderator edits a hotel profile.

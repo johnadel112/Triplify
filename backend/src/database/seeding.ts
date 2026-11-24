@@ -3,8 +3,8 @@ import { hash } from 'bcryptjs';
 import { isEmail } from 'class-validator';
 import { User } from '../users/user.schema';
 import { UserRole } from '../common/domain';
-import { Airport, City, Country, Currency } from '../reference-data/reference.schema';
-import { airports, cities, countries, currencies } from '../reference-data/seed-data';
+import { Airport, Attraction, City, Country, Currency } from '../reference-data/reference.schema';
+import { airports, attractions, cities, countries, currencies } from '../reference-data/seed-data';
 
 export async function seedAdmin(
   users: Model<User>,
@@ -35,8 +35,17 @@ export async function seedReference(models: {
   cities: Model<City>;
   airports: Model<Airport>;
   currencies: Model<Currency>;
+  attractions: Model<Attraction>;
 }) {
   for (const city of cities) new Intl.DateTimeFormat('en', { timeZone: city.timeZone });
+  // The dataset must be internally consistent before anything is written.
+  const cityCodes = new Set(cities.map((c) => c.code));
+  const currencyCodes = new Set(currencies.map((c) => c.code));
+  for (const country of countries)
+    if (!currencyCodes.has(country.currency))
+      throw new Error(`Country ${country.code} uses unsupported currency ${country.currency}`);
+  for (const record of [...airports, ...attractions])
+    if (!cityCodes.has(record.city)) throw new Error(`Unknown city ${record.city}`);
   await Promise.all(Object.values(models).map((model) => model.init()));
   for (const record of countries)
     await models.countries.updateOne(
@@ -58,6 +67,12 @@ export async function seedReference(models: {
     );
   for (const record of currencies)
     await models.currencies.updateOne(
+      { code: record.code },
+      { $set: record },
+      { upsert: true, runValidators: true },
+    );
+  for (const record of attractions)
+    await models.attractions.updateOne(
       { code: record.code },
       { $set: record },
       { upsert: true, runValidators: true },

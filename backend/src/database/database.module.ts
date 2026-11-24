@@ -18,6 +18,8 @@ import {
   CountrySchema,
   Currency,
   CurrencySchema,
+  Attraction,
+  AttractionSchema,
 } from '../reference-data/reference.schema';
 export const models = [
   { name: User.name, schema: UserSchema },
@@ -28,6 +30,7 @@ export const models = [
   { name: City.name, schema: CitySchema },
   { name: Country.name, schema: CountrySchema },
   { name: Currency.name, schema: CurrencySchema },
+  { name: Attraction.name, schema: AttractionSchema },
 ];
 @Global()
 @Module({ imports: [MongooseModule.forFeature(models)], exports: [MongooseModule] })

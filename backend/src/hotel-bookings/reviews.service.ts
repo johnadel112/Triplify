@@ -171,6 +171,7 @@ export class ReviewsService {
       author: { id: review.userId.toString(), name: authorName },
       rating: review.rating,
       text: review.text ?? null,
+      moderatorReply: review.moderatorReply ?? null,
       createdAt: review.createdAt,
       updatedAt: review.updatedAt,
     };

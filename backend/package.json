@@ -10,9 +10,14 @@
     "format": "prettier --write src scripts test docs *.json *.mjs README.md",
     "test": "jest --runInBand",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
+    "stripe:login": "stripe login",
+    "stripe:listen": "stripe listen --events payment_intent.succeeded,payment_intent.payment_failed --forward-to http://localhost:3000/api/payments/webhook",
+    "stripe:trigger:success": "stripe trigger payment_intent.succeeded",
+    "stripe:trigger:failure": "stripe trigger payment_intent.payment_failed",
     "seed:admin": "ts-node scripts/seed-admin.ts",
     "seed:reference": "ts-node scripts/seed-reference.ts",
-    "migrate:flight-airlines": "ts-node scripts/migrate-flight-airline-ids.ts"
+    "migrate:flight-airlines": "ts-node scripts/migrate-flight-airline-ids.ts",
+    "migrate:airline-moderator-index": "ts-node scripts/migrate-airline-moderator-index.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -32,6 +37,8 @@
     "helmet": "^8.0.0",
     "moment-timezone": "^0.6.6",
     "mongoose": "^8.19.0",
+    "nodemailer": "^10.6.0",
+    "pdfkit": "0.17.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "stripe": "^23.1.0"
@@ -45,6 +52,8 @@
     "@types/jest": "^29.5.14",
     "@types/multer": "^2.3.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.7",
     "@types/supertest": "^6.0.3",
     "eslint": "^9.0.0",
     "jest": "^29.7.0",

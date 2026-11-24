@@ -6,6 +6,7 @@ import { CredentialsDto, RegisterDto } from '../common/dto';
 import { Principal } from '../common/domain';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { EmailAuthService } from './email-auth.service';
 import { AuthCookies } from './cookies';
 import { AllowPasswordChange, CurrentUser, Public } from './guards';
 @ApiTags('Authentication')
@@ -16,13 +17,16 @@ export class AuthController {
     private auth: AuthService,
     private cookies: AuthCookies,
     private users: UsersService,
+    private emailAuth: EmailAuthService,
   ) {}
   @Public()
   @Post('register')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Register a normal user; consent is mandatory' })
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto);
+  async register(@Body() dto: RegisterDto) {
+    const user = await this.auth.register(dto);
+    await this.emailAuth.request(user.email, 'verify');
+    return user;
   }
   @Public()
   @Post('login')

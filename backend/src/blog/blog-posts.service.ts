@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
-import { mkdir, unlink, writeFile } from 'fs/promises';
+import { storeImages, removeImage } from '../common/media';
 import { join } from 'path';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { AccountStatus, Principal, UserRole } from '../common/domain';
@@ -32,6 +32,7 @@ const OBJECT_ID = /^[\da-f]{24}$/i;
 const FILE_NAME = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\.(?:jpg|png)$/i;
 
 type Row = {
+  itineraryId?: Types.ObjectId;
   _id: Types.ObjectId;
   authorId: Types.ObjectId;
   title: string;
@@ -95,13 +96,21 @@ export class BlogPostsService {
       ]),
     ]);
     const byAuthor = new Map(authors.map((u) => [u._id.toString(), u]));
+    const attached = await this.itineraries.find({
+      _id: { $in: rows.flatMap(post => post.itineraryId ? [post.itineraryId] : []) },
+      isPublic: true, hidden: { $ne: true },
+    }).select('title userId').lean();
+    const byItinerary = new Map(attached.map(itinerary => [String(itinerary._id), itinerary]));
     const likeCount = new Map(likes.map((x) => [x._id.toString(), x.count]));
     const commentCount = new Map(comments.map((x) => [x._id.toString(), x.count]));
     return rows.map((post) => {
       const author = byAuthor.get(post.authorId.toString());
+      const itinerary = post.itineraryId ? byItinerary.get(String(post.itineraryId)) : undefined;
       return {
         id: post._id.toString(),
         title: post.title,
+        itinerary: itinerary && author && author.status !== AccountStatus.DEACTIVATED && String(itinerary.userId) === String(post.authorId)
+          ? { id: String(itinerary._id), title: itinerary.title } : null,
         ...(includeBody ? { body: post.body } : {}),
         excerpt: excerpt(post.body),
         tags: post.tags,
@@ -151,6 +160,7 @@ export class BlogPostsService {
     const where: FilterQuery<BlogPost> = {
       status: BlogPostStatus.PUBLISHED,
       hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     };
     if (query.tag) where.tags = normalizeTags([query.tag])[0];
     const q = query.q?.trim();
@@ -203,6 +213,7 @@ export class BlogPostsService {
   async getPublished(postId: string) {
     const row = await this.posts.findOne({
       _id: this.validId(postId), status: BlogPostStatus.PUBLISHED, hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
     }).lean();
     if (!row) throw new NotFoundException('Published post not found');
     const [view] = await this.present([row as unknown as Row], true);
@@ -251,7 +262,7 @@ export class BlogPostsService {
       this.likes.deleteMany({ postId }),
     ]);
     await Promise.all(files.map((file) =>
-      unlink(join(MEDIA_DIR, file)).catch(() => undefined),
+      removeImage('blog-posts', file),
     ));
   }
 
@@ -263,7 +274,7 @@ export class BlogPostsService {
       throw new BadRequestException('A post can have at most five images');
     }
     const prepared = files.map((file) => {
-      if (!file.buffer?.length || file.size > MAX_IMAGE_BYTES) {
+      if (!file.buffer?.length || file.size > MAX_IMAGE_BYTES || file.buffer.length > MAX_IMAGE_BYTES) {
         throw new BadRequestException('Every image must be <= 5 MB');
       }
       const kind = imageKind(file.buffer);
@@ -281,18 +292,12 @@ export class BlogPostsService {
         data: file.buffer,
       };
     });
-    await mkdir(MEDIA_DIR, { recursive: true });
-    const written: string[] = [];
+    const rollback = await storeImages('blog-posts', prepared.map(img => ({ filename: img.metadata.filename, data: img.data })));
     try {
-      for (const img of prepared) {
-        const fullPath = join(MEDIA_DIR, img.metadata.filename);
-        await writeFile(fullPath, img.data, { flag: 'wx' });
-        written.push(fullPath);
-      }
       post.images.push(...prepared.map((img) => img.metadata));
       await post.save();
     } catch (error) {
-      await Promise.all(written.map((path) => unlink(path).catch(() => undefined)));
+      await rollback();
       throw error;
     }
     const [view] = await this.present([post.toObject() as unknown as Row], true, true);
@@ -305,8 +310,13 @@ export class BlogPostsService {
     if (!image) throw new NotFoundException('Image not found on this post');
     post.images = post.images.filter((entry) => entry.id !== imageId);
     await post.save();
-    await unlink(join(MEDIA_DIR, image.filename)).catch(() => undefined);
+    await removeImage('blog-posts', image.filename);
     return { removed: true, imageId };
+  }
+
+  /** ACC-12: posts of deactivated accounts are hidden from public pages. */
+  private async deactivatedUserIds() {
+    return this.users.find({ status: AccountStatus.DEACTIVATED }).distinct('_id');
   }
 
   /** Media from drafts remains private. No arbitrary files or paths can be requested. */
@@ -315,6 +325,7 @@ export class BlogPostsService {
     const exists = await this.posts.exists({
       status: BlogPostStatus.PUBLISHED,
       hidden: { $ne: true },
+      authorId: { $nin: await this.deactivatedUserIds() },
       'images.filename': filename,
     });
     if (!exists) throw new NotFoundException('Image not found');

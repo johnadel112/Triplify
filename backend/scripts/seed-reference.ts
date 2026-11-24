@@ -1,6 +1,12 @@
 import { getModelToken } from '@nestjs/mongoose';
 import { seedContext } from './seed-context';
-import { Airport, City, Country, Currency } from '../src/reference-data/reference.schema';
+import {
+  Airport,
+  Attraction,
+  City,
+  Country,
+  Currency,
+} from '../src/reference-data/reference.schema';
 import { seedReference } from '../src/database/seeding';
 async function run() {
   const app = await seedContext();
@@ -10,8 +16,11 @@ async function run() {
       cities: app.get(getModelToken(City.name)),
       airports: app.get(getModelToken(Airport.name)),
       currencies: app.get(getModelToken(Currency.name)),
+      attractions: app.get(getModelToken(Attraction.name)),
     });
-    console.log('Reference dataset v1 seeded (7 countries, 7 cities, 7 airports, 2 currencies)');
+    console.log(
+      'Reference dataset v3 seeded (8 countries, 8 cities, 8 airports, 7 currencies, 8 attractions)',
+    );
   } finally {
     await app.close();
   }

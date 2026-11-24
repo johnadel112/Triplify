@@ -85,7 +85,7 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     process.env.JWT_ACCESS_SECRET = 'test-only-'.repeat(8);
     process.env.FRONTEND_URL = 'http://localhost:5173';
     process.env.COOKIE_SECURE = 'false';
-    const { AppModule } = await import('../src/app.module');
+    const { AppModule } = await import('../src/app.module.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PROVIDER_MANAGEMENT)
       .useValue({ verifyProvider: jest.fn(), setProviderActive: jest.fn() })
@@ -160,6 +160,57 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
     expect(await comments.countDocuments({ postId: spam._id })).toBe(0);
     expect(await likes.countDocuments({ postId: spam._id })).toBe(0);
     await del(`/admin/content/POST/${spam.id as string}`, admin.cookies).expect(404);
+  });
+
+  it('ACC-12: posts and public itineraries of a deactivated author are hidden', async () => {
+    const author = await account();
+    const reader = await account();
+    const admin = await account(UserRole.ADMIN);
+    const live = await publishedPost(author.user._id);
+    const trip = await publicItinerary(author.user._id);
+    await get(`/blog/posts/${live.id as string}`).expect(200);
+    await get(`/itineraries/public/${trip.id as string}`).expect(200);
+
+    await users.updateOne({ _id: author.user._id }, { $set: { status: AccountStatus.DEACTIVATED } });
+
+    expect(JSON.stringify((await get('/blog/posts').expect(200)).body)).not.toContain(live.id as string);
+    await get(`/blog/posts/${live.id as string}`).expect(404);
+    await get(`/blog/posts/${live.id as string}/comments`).expect(404);
+    await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(404);
+    await post(`/blog/posts/${live.id as string}/comments`, reader.cookies).send({ content: 'hi' }).expect(404);
+    expect(JSON.stringify((await get('/itineraries/public/search').expect(200)).body)).not.toContain(trip.id as string);
+    await get(`/itineraries/public/${trip.id as string}`).expect(404);
+    await get(`/itineraries/${trip.id as string}`, reader.cookies).expect(403);
+    await post(`/itineraries/${trip.id as string}/clone`, reader.cookies).send({}).expect(403);
+    // Admins can still inspect it.
+    await get(`/itineraries/${trip.id as string}`, admin.cookies).expect(200);
+  });
+
+  it('BLG-05: rejects non-string and over-long comments with 400', async () => {
+    const author = await account();
+    const live = await publishedPost(author.user._id);
+    const path = `/blog/posts/${live.id as string}/comments`;
+    await post(path, author.cookies).send({ content: 123 }).expect(400);
+    await post(path, author.cookies).send({ content: 'x'.repeat(501) }).expect(400);
+    await post(path, author.cookies).send({ content: 'ok', extra: true }).expect(400);
+    await post(path, author.cookies).send({ content: 'Nice post' }).expect(201);
+  });
+
+  it('BLG-06: likes toggle on published posts only', async () => {
+    const author = await account();
+    const reader = await account();
+    const live = await publishedPost(author.user._id);
+    const liked = await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(201);
+    expect(liked.body.liked).toBe(true);
+    const unliked = await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(201);
+    expect(unliked.body.liked).toBe(false);
+
+    await post(`/blog/posts/${new Types.ObjectId().toString()}/like`, reader.cookies).expect(404);
+    const draft = await posts.create({ authorId: author.user._id, title: 'Draft', body: 'Not yet' });
+    await post(`/blog/posts/${draft.id as string}/like`, reader.cookies).expect(404);
+    await posts.updateOne({ _id: live._id }, { $set: { hidden: true } });
+    await post(`/blog/posts/${live.id as string}/like`, reader.cookies).expect(404);
+    expect(await likes.countDocuments({ userId: reader.user._id })).toBe(0);
   });
 
   it('BLG-05: publicly lists only visible comments with stable pagination and safe authors', async () => {
@@ -251,6 +302,15 @@ describe('Content moderation through reports (GEN-09, GEN-10)', () => {
       .send({})
       .expect(403);
     await get(`/itineraries/${hiddenTrip.id as string}`, owner.cookies).expect(200);
+  });
+
+  it('ITN-14: a malformed itinerary id in the budget summary is a 400, not a server error', async () => {
+    const owner = await account();
+    const res = await request(server())
+      .get('/api/itineraries/not-an-id/budget-summary')
+      .set('Cookie', owner.cookies)
+      .expect(400);
+    expect(res.body.statusCode).toBe(400);
   });
 
   it('rejects unknown content types, invalid ids and missing content', async () => {

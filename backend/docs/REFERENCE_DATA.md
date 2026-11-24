@@ -1,13 +1,43 @@
-# Maintained starter dataset v1
+# Reference dataset v3 (official course datasets)
 
-This repository uses John's seven-airport spreadsheet supplied in chat: CAI, DXB, LHR, JFK, CDG, HND and RUH. It seeds the seven corresponding countries and cities. Supported currencies currently remain EGP and USD; the sheet supplied no currency list. This is not a worldwide airport/currency catalog. John owns additions and review.
+The database is initialized from the **official reference datasets** linked in the project
+description (section 5.1), which "will be used during the final project evaluation":
+<https://docs.google.com/spreadsheets/d/1SlKUTRqlHuBJAMC-Z-QOZzSrzKpGHT_TgQUI5gVm-BA>
+(sheets `Countries.csv`, `Cities.csv`, `Airports.csv`, `Attractions.csv`). Checked against
+`src/reference-data/seed-data.ts` on 2026-11-19.
 
-Source column mapping: `iata_code` → API/schema `iataCode`, `name` → `name`, `city_id` → `city` (references City.code), `country_code` → `country` (references Country.code). The supplied city IDs are preserved exactly: `cairo`, `dubai`, `london`, `new_york`, `paris`, `tokyo`, `riyadh`. These are internal identifiers, not claimed ISO city codes. IANA `timeZone` is added to each city/airport.
+| Sheet | Rows | Seeded collection | Status |
+|---|---|---|---|
+| Airports.csv | 8 | `airports` | identical (CAI, DXB, LHR, JFK, CDG, HND, RUH, FRA) |
+| Cities.csv | 8 | `cities` | identical ids; IANA `timeZone` taken from the airport rows |
+| Countries.csv | 8 | `countries` | identical, including the `currency` column |
+| Countries.csv `currency` | 7 distinct | `currencies` | EGP, AED, GBP, USD, EUR, JPY, SAR |
+| Attractions.csv | 8 | `attractions` | identical ids `att-1` … `att-8` |
 
-Provenance checked 2026-10-31:
+## Field mapping
 
-- Airport codes/names/city/country associations: user's supplied spreadsheet screenshot, 2026-10-31. Additional cross-checks for [CAI](https://ourairports.com/airports/HECA/) and [JFK](https://ourairports.com/airports/KJFK/) from OurAirports, which publishes public-domain data at https://ourairports.com/data/.
-- Time zones and country codes: [IANA zone1970.tab](https://data.iana.org/time-zones/tzdb/zone1970.tab); `Africa/Cairo`, `Asia/Dubai`, `Europe/London`, `America/New_York`, `Europe/Paris`, `Asia/Tokyo`, `Asia/Riyadh`. Never use fixed UTC offsets.
-- Currency designations: [SIX ISO 4217 maintenance agency](https://www.six-group.com/en/products-services/financial-information/market-reference-data/data-standards.html), [current XML list](https://www.six-group.com/dam/download/financial-information/data-center/iso-currrency/lists/list-one.xml). XML was not retrievable by the browsing tool; this is an explicitly maintained subset, not an automated import.
+- Airports: `iata_code` → `iataCode`, `name` → `name`, `city_id` → `city` (City.code),
+  `country_code` → `country` (Country.code), `time_zone` → `timeZone`.
+- Cities: `city_id` → `code` (kept exactly: `cairo`, `dubai`, `london`, `new_york`, `paris`,
+  `tokyo`, `riyadh`, `frankfurt`), `name`, `country_code` → `country`.
+- Countries: `code`, `name`, `currency` (ISO 4217).
+- Currencies: exactly the distinct `currency` codes of Countries.csv ("the supported currencies
+  are the currency codes listed in the Countries.csv"). Names and `minorUnits` follow ISO 4217
+  (JPY has 0 minor units, the others 2).
+- Attractions: `attraction_id` → `code`, `name`, `city_id` → `city`.
 
-`npm run seed:reference` upserts by country/city/currency code and airport IATA code, validates time-zone support, and does not delete additional team data. Re-running it restores maintained entries to this version. All reference endpoints paginate at 10; continue to `pageCount` to populate selects. Default profile currency is USD; seed references before serving registration/profile forms. Currency data is not an exchange-rate service.
+## Known data issue in the official sheet
+
+`Attractions.csv` stores `att-8` as `R�merberg`: a character was lost when the sheet was
+created. It is Frankfurt's Römerberg square, so the seed uses the correct spelling `Römerberg`
+with the official id `att-8`.
+
+## Seeding
+
+`npm run seed:reference` validates time zones and that every airport/attraction city and every
+country currency exists, then upserts by code (IATA code for airports). It never deletes
+additional team data, and re-running it restores these entries.
+
+Public, paginated (10 per page) read endpoints: `GET /api/reference/countries`, `/cities`,
+`/airports`, `/currencies` and `/attractions?city=<city code>`. Currency data is not an
+exchange-rate service; conversion uses FXRatesAPI (see `ITINERARIES.md`).
