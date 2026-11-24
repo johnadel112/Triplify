@@ -8,3 +8,7 @@ coverage/
 .DS_Store
 .cache/
 uploads/
+.next/
+*.tsbuildinfo
+playwright-report/
+test-results/

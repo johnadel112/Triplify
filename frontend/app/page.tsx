@@ -1,23 +1,61 @@
-import Link from 'next/link';
-
+import Image from "next/image";
+import Link from "next/link";
+import { SearchEntry } from "@/components/search-entry";
 export default function HomePage() {
   return (
     <div className="home-page">
-      <section className="hero container">
-        <div className="hero-copy">
-          <span className="eyebrow"><i /> One journey. Every detail.</span>
-          <h1>Go farther.<br /><em>Plan lighter.</em></h1>
-          <p>Bring flights, stays and the moments between them into one calm, considered travel workspace.</p>
-          <div className="hero-actions"><Link className="button" href="/register">Start your journey <span>→</span></Link><Link className="text-link" href="/login">I already have an account</Link></div>
-          <div className="trust-row"><span>Secure account access</span><span>One connected itinerary</span><span>Built for every traveler</span></div>
+      <section className="travel-hero">
+        <Image
+          src="/images/journey.jpg"
+          alt="Mountain peaks rising above a tranquil alpine landscape"
+          fill
+          priority
+          sizes="100vw"
+          className="hero-photo"
+        />
+        <div className="hero-shade" />
+        <div className="container hero-copy">
+          <span className="eyebrow">THE ART OF GOING FURTHER</span>
+          <h1>
+            Explore the world.
+            <br />
+            <em>Exceptionally.</em>
+          </h1>
+          <p>
+            Flights, stays and the moments in between.
+            <br />
+            Make room for your next journey.
+          </p>
+          <Link className="button button-light" href="/register">
+            Create your account
+          </Link>
         </div>
-        <div className="hero-art" aria-label="Abstract route from Cairo to a new destination">
-          <span className="sun" /><span className="route-line" /><span className="route-dot dot-one" /><span className="route-dot dot-two" />
-          <div className="trip-card"><small>NEXT CHAPTER</small><strong>Cairo <span>→</span> Anywhere</strong><p>Your plans, ready when you are.</p></div>
-          <div className="coordinate">30.0444° N<br />31.2357° E</div>
+        <span className="photo-caption">
+          A change of scenery. A different perspective.
+        </span>
+      </section>
+      <div className="container search-container">
+        <SearchEntry />
+      </div>
+      <section className="container editorial-section">
+        <div>
+          <span className="section-kicker">TRAVEL, CONSIDERED</span>
+          <h2>
+            Every journey begins
+            <br />
+            with a little possibility.
+          </h2>
+        </div>
+        <div>
+          <p>
+            Somewhere unfamiliar. A familiar place, seen differently. Bring your
+            travel plans together with an account that keeps your details close.
+          </p>
+          <Link className="text-link" href="/account">
+            Your personal travel space
+          </Link>
         </div>
       </section>
-      <section className="feature-band"><div className="container feature-grid"><article><span>01</span><h2>Search with clarity</h2><p>Compare the details that matter without losing the bigger picture.</p></article><article><span>02</span><h2>Book with confidence</h2><p>Verified pricing and policies stay attached to every booking.</p></article><article><span>03</span><h2>Keep it together</h2><p>Your account becomes the quiet home for each upcoming journey.</p></article></div></section>
     </div>
   );
 }

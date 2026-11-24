@@ -1,23 +1,83 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useAuth } from '@/components/auth-provider';
-import { ApiError } from '@/lib/api';
-
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
+import { ApiError } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui";
 export default function SettingsPage() {
   const { user, deactivate } = useAuth();
   const router = useRouter();
-  const [confirmation, setConfirmation] = useState('');
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!user) return null;
-  if (user.role !== 'USER') return <div className="content-heading"><span className="section-kicker">SETTINGS</span><h2>Provider account controls</h2><p>Moderator and administrator lifecycle changes are managed by an authorized administrator.</p></div>;
-  async function deactivateAccount() {
-    setError(''); setSubmitting(true);
-    try { await deactivate(); router.replace('/?account=deactivated'); }
-    catch (cause) { setError(cause instanceof ApiError ? cause.message : 'Unable to deactivate this account.'); }
-    finally { setSubmitting(false); }
+  async function confirm() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deactivate();
+      router.replace("/login?deactivated=1");
+      router.refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Unable to deactivate your account.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
-  return <><div className="content-heading"><span className="section-kicker">SETTINGS</span><h2>Account controls</h2><p>Account deactivation is permanent and ends every active session.</p></div><section className="danger-zone"><h3>Deactivate account</h3><p>You cannot deactivate while you have an upcoming confirmed booking. Type <strong>DEACTIVATE</strong> to confirm.</p>{error && <p className="form-notice error-notice">{error}</p>}<FormField label="Confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="DEACTIVATE" /><button className="danger-button" type="button" disabled={confirmation !== 'DEACTIVATE' || submitting} onClick={deactivateAccount}>{submitting ? 'Deactivating…' : 'Deactivate my account'}</button></section></>;
+  return (
+    <>
+      <div className="content-heading">
+        <span className="section-kicker">ACCOUNT CONTROLS</span>
+        <h2>Manage your account</h2>
+        <p>Choose how you use Triplify.</p>
+      </div>
+      {user.role === "USER" ? (
+        <section className="danger-zone">
+          <h3>Deactivate account</h3>
+          <p>
+            Deactivation prevents sign-in and ends all active sessions. Upcoming
+            confirmed bookings must be resolved first. This does not delete your
+            booking history.
+          </p>
+          <button
+            className="danger-button"
+            onClick={() => {
+              setError("");
+              setOpen(true);
+            }}
+          >
+            Deactivate my account
+          </button>
+        </section>
+      ) : (
+        <p>
+          Administrator and moderator account status is managed through
+          administration.
+        </p>
+      )}
+      {open && (
+        <ConfirmDialog
+          title="Deactivate your account?"
+          busy={busy}
+          error={error}
+          onCancel={() => setOpen(false)}
+          onConfirm={confirm}
+        >
+          <p>
+            You will lose sign-in access to this account. This action cannot be
+            reversed from your account settings.
+          </p>
+          <p>
+            The server will check for upcoming confirmed bookings before
+            proceeding.
+          </p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
 }
