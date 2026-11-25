@@ -542,4 +542,28 @@ export class FlightsService {
     }
     return flight.save();
   }
+
+  async listForModerator(airlineIds: string[], page = 1) {
+    const limit = 20;
+    const p = Math.max(1, Number(page) || 1);
+    const skip = (p - 1) * limit;
+    const filter = {
+      airlineId: { $in: airlineIds.filter(Boolean).map((id) => new Types.ObjectId(id)) },
+    };
+    const [items, total] = await Promise.all([
+      this.flightModel
+        .find(filter)
+        .sort({ departureTimeUtc: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.flightModel.countDocuments(filter),
+    ]);
+    return {
+      items,
+      total,
+      page: p,
+      pageCount: Math.ceil(total / limit) || 1,
+    };
+  }
 }
