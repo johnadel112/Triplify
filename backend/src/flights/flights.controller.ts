@@ -46,6 +46,13 @@ export class FlightsController {
     return this.flightsService.searchFlights(query);
   }
 
+  @Get('manage')
+  @Roles(UserRole.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'List all flights belonging to the moderator assigned airline' })
+  async listForModerator(@CurrentUser() user: Principal, @Query() query: PageDto) {
+    return this.flightsService.listForModerator(this.airlineIds(user), query?.page);
+  }
+
   @Get(':id/bookings')
   @Roles(UserRole.AIRLINE_MODERATOR)
   @ApiOperation({
